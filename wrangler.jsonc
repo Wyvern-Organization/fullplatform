@@ -2,7 +2,7 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "osaii",
   "main": "src/index.ts",
-  "compatibility_date": "2026-05-14",
+  "compatibility_date": "2026-08-11",
   "compatibility_flags": ["nodejs_compat"],
   "rules": [
     {
@@ -22,6 +22,21 @@
     { "binding": "STUDIO_FILES", "bucket_name": "osaii-studio" }
   ],
   "browser": { "binding": "BROWSER" },
+  "ai": { "binding": "AI" },
+  "vectorize": [
+    { "binding": "MASQUE_SEARCH", "index_name": "osaii-masque-search" }
+  ],
+  "durable_objects": {
+    "bindings": [
+      { "name": "MASQUE_SESSIONS", "class_name": "MasqueSession" },
+      { "name": "COSAII_RELAYS", "class_name": "CosaiiRelay" }
+    ]
+  },
+  "migrations": [
+    { "tag": "masque-v1", "new_sqlite_classes": ["MasqueSession"] },
+    { "tag": "cosaii-v1", "new_sqlite_classes": ["CosaiiRelay"] }
+  ],
+  "observability": { "enabled": true, "head_sampling_rate": 1 },
   "triggers": {
     "crons": ["*/5 * * * *"]
   },

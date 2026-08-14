@@ -7,6 +7,7 @@ import {
   providerForModel,
   trackTokenResponse,
 } from "../src/lib/token-usage";
+import { BITNET_MODEL_ID } from "./bitnet";
 
 export interface StudioEnv extends PoolsideEnv {
   DB: D1Database;
@@ -14,6 +15,7 @@ export interface StudioEnv extends PoolsideEnv {
 }
 type Account = { id: number; email: string; display_name: string };
 const MODELS = [
+  { id: BITNET_MODEL_ID, name: "Mini (Preview)", access: "guest" },
   { id: "poolside/laguna-xs-2.1", name: "Fast", access: "guest" },
   { id: "poolside/laguna-s-2.1", name: "Smart", access: "guest" },
   { id: "logfare/kimi-k3", name: "Kimi K3", access: "advanced" },
@@ -29,6 +31,22 @@ const MODELS = [
     access: "advanced",
   },
 ] as const;
+
+const STUDIO_IDENTITY_PROMPT =
+  "You are a helpful AI assistant in OSS Studio by OSAII (Open-Source AI Initiative, osaii.wyvernhub.net). Be clear, honest, and useful. Do not claim to be the underlying model provider or expose internal provider details.";
+
+function withStudioIdentity(body: Record<string, unknown>): Record<string, unknown> {
+  const messages = Array.isArray(body.messages) ? body.messages : [];
+  const alreadyPresent = messages.some((message) =>
+    message && typeof message === "object" &&
+    (message as { role?: unknown }).role === "system" &&
+    typeof (message as { content?: unknown }).content === "string" &&
+    (message as { content: string }).content.includes("Open-Source AI Initiative")
+  );
+  return alreadyPresent
+    ? body
+    : { ...body, messages: [{ role: "system", content: STUDIO_IDENTITY_PROMPT }, ...messages] };
+}
 
 export async function studioApi(
   request: Request,
@@ -184,12 +202,56 @@ const STUDIO_LIMITS = {
   guest: { minute: 30, hour: 300, day: 1_000 },
   account: { minute: 600, hour: 6_000, day: 20_000 },
 } as const;
+const STUDIO_MINI_FAST_LIMITS = {
+  guest: { minute: 5, hour: 30, day: 100 },
+  account: { minute: 10, hour: 100, day: 300 },
+} as const;
+type StudioRateWindow = { count: number; resetAt: number };
+const studioMiniFastWindows = new Map<string, StudioRateWindow>();
+
+function studioMiniFastWindow(key: string, now: number, duration: number): StudioRateWindow {
+  const current = studioMiniFastWindows.get(key);
+  if (current && current.resetAt > now) {
+    current.count += 1;
+    return current;
+  }
+  const next = { count: 1, resetAt: now + duration };
+  studioMiniFastWindows.set(key, next);
+  if (studioMiniFastWindows.size > 10_000)
+    for (const [entry, value] of studioMiniFastWindows) if (value.resetAt <= now) studioMiniFastWindows.delete(entry);
+  return next;
+}
 
 async function globalRateLimit(
   db: D1Database,
   request: Request,
   accountId: number | null,
 ): Promise<Response | null> {
+  const body: { model?: unknown; fast_mode?: unknown; device?: unknown } = await request.clone().json<{ model?: unknown; fast_mode?: unknown; device?: unknown }>().catch(() => ({} as { model?: unknown; fast_mode?: unknown; device?: unknown }));
+  const selectedModel = typeof body.model === "string" ? body.model : "";
+  const fastMini = selectedModel === BITNET_MODEL_ID && (body.fast_mode === true || body.device === "gpu");
+  // Standard Mini uses the CPU demo path and is unlimited for guests and
+  // accounts. Only its explicitly selected GPU Fast Mode is quota-managed.
+  if (selectedModel === BITNET_MODEL_ID && !fastMini) return null;
+  if (fastMini) {
+    const bytes = accountId
+      ? `account:${accountId}`
+      : `ip:${request.headers.get("cf-connecting-ip") || "unknown"}`;
+    const now = Date.now();
+    const limits = accountId ? STUDIO_MINI_FAST_LIMITS.account : STUDIO_MINI_FAST_LIMITS.guest;
+    const minute = studioMiniFastWindow(`${bytes}:minute`, now, 60_000);
+    const hour = studioMiniFastWindow(`${bytes}:hour`, now, 3_600_000);
+    const day = studioMiniFastWindow(`${bytes}:day`, now, 86_400_000);
+    const breached = minute.count > limits.minute ? minute : hour.count > limits.hour ? hour : day.count > limits.day ? day : null;
+    if (!breached) return null;
+    const retryAfter = Math.max(1, Math.ceil((breached.resetAt - now) / 1000));
+    return json({
+      error: "rate_limit_exceeded",
+      message: "Mini Fast Mode has a separate GPU fair-use limit. Mini streaming remains unlimited.",
+      scope: "studio-mini-fast",
+      limits,
+    }, 429, { "retry-after": String(retryAfter), "x-ratelimit-limit-minute": String(limits.minute), "x-ratelimit-remaining": String(Math.max(0, limits.minute - minute.count)) });
+  }
   const identity = accountId
     ? { clause: "account_id=?", value: accountId }
     : await (async () => {
@@ -306,7 +368,7 @@ async function studioChat(
         "content-type": "application/json",
         accept: request.headers.get("accept") || "application/json",
       },
-      body: JSON.stringify(body),
+      body: JSON.stringify(withStudioIdentity(body as Record<string, unknown>)),
     }),
     env,
     "/chat/completions",
@@ -401,7 +463,7 @@ async function studioSwarm(
               model: "poolside/laguna-xs-2.1",
               max_tokens: 180,
               messages: [
-                { role: "system", content: `You are a bounded researcher call representing logical researchers ${index * Math.ceil(logicalResearcherCount / upstreamResearcherCount) + 1}-${Math.min(logicalResearcherCount, (index + 1) * Math.ceil(logicalResearcherCount / upstreamResearcherCount))} in a parallel team of ${logicalResearcherCount}. Produce one compact, concrete angle that combines that slice. Do not repeat the task.` },
+                { role: "system", content: `${STUDIO_IDENTITY_PROMPT}\nYou are a bounded researcher call representing logical researchers ${index * Math.ceil(logicalResearcherCount / upstreamResearcherCount) + 1}-${Math.min(logicalResearcherCount, (index + 1) * Math.ceil(logicalResearcherCount / upstreamResearcherCount))} in a parallel team of ${logicalResearcherCount}. Produce one compact, concrete angle that combines that slice. Do not repeat the task.` },
                 { role: "user", content: prompt },
               ],
             }),
@@ -444,7 +506,7 @@ async function studioSwarm(
         model: "poolside/laguna-s-2.1",
         max_tokens: 1_500,
         messages: [
-          { role: "system", content: "You are the lead delegator. Synthesize the team findings into a direct, useful answer with a recommendation. Do not mention internal provider details." },
+          { role: "system", content: `${STUDIO_IDENTITY_PROMPT}\nYou are the lead delegator. Synthesize the team findings into a direct, useful answer with a recommendation. Do not mention internal provider details.` },
           { role: "user", content: `Task: ${prompt}\n\nFindings from ${logicalResearcherCount} logical researchers (${findings.length} pooled calls):\n${findings.join("\n---\n").slice(0, 120_000)}` },
         ],
       }),
@@ -656,11 +718,7 @@ async function updateProject(
     db,
     account.id,
     projectId,
-    status === "published"
-      ? "project.publish"
-      : status === "disabled"
-        ? "project.disable"
-        : "project.settings",
+    status === "disabled" ? "project.disable" : "project.settings",
     JSON.stringify({ permission, status }),
   );
   return json({ ok: true });

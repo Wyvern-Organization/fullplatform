@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 280">
+  <rect width="720" height="280" rx="28" fill="#f5f7fb"/>
+  <path d="M52 198C158 72 266 72 360 170S562 266 668 82" fill="none" stroke="#c8d7ff" stroke-width="48" stroke-linecap="round"/>
+  <path d="M52 198C158 72 266 72 360 170S562 266 668 82" fill="none" stroke="#4c6fff" stroke-width="9" stroke-linecap="round"/>
+  <circle cx="360" cy="170" r="13" fill="#f5b84b"/>
+  <text x="52" y="62" font-family="Manrope, sans-serif" font-size="28" font-weight="700" fill="#172033">Your computer, ready.</text>
+  <text x="52" y="98" font-family="Noto Sans, sans-serif" font-size="16" fill="#536079">Private by default. Recoverable by design.</text>
+</svg>
+

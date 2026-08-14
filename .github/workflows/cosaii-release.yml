@@ -1,0 +1,128 @@
+name: Cosaii release
+
+on:
+  push:
+    tags: ["cosaii-v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - uses: dtolnay/rust-toolchain@stable
+      - run: npm ci
+      - run: npm test
+      - run: npm run typecheck
+      - run: npm run cosaii:check
+      - run: npx wrangler deploy --dry-run --config wrangler.jsonc
+
+  binaries:
+    needs: test
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { runner: ubuntu-latest, os: linux, arch: x64, bun_target: bun-linux-x64 }
+          - { runner: ubuntu-24.04-arm, os: linux, arch: arm64, bun_target: bun-linux-arm64 }
+          - { runner: macos-13, os: macos, arch: x64, bun_target: bun-darwin-x64 }
+          - { runner: macos-14, os: macos, arch: arm64, bun_target: bun-darwin-arm64 }
+          - { runner: windows-latest, os: windows, arch: x64, bun_target: bun-windows-x64 }
+          - { runner: windows-11-arm, os: windows, arch: arm64, bun_target: bun-windows-arm64 }
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - uses: dtolnay/rust-toolchain@stable
+      - run: npm ci
+      - run: cargo build --release --locked --manifest-path cosaii/Cargo.toml
+      - name: Compile native OpenTUI client
+        working-directory: packages/cosaii
+        env: { COSAII_BUN_TARGET: "${{ matrix.bun_target }}" }
+        run: ../../node_modules/.bin/bun run scripts/build.ts
+      - name: Package binaries
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p release/bin
+          if [ "${{ matrix.os }}" = windows ]; then
+            cp packages/cosaii/dist/cosaii.exe release/bin/
+            cp cosaii/target/release/cosaii-app-server.exe release/bin/
+            (cd release/bin && 7z a "../cosaii-windows-${{ matrix.arch }}.zip" cosaii.exe cosaii-app-server.exe)
+            asset="release/cosaii-windows-${{ matrix.arch }}.zip"
+          else
+            cp packages/cosaii/dist/cosaii release/bin/
+            cp cosaii/target/release/cosaii-app-server release/bin/
+            tar -C release/bin -czf "release/cosaii-${{ matrix.os }}-${{ matrix.arch }}.tar.gz" cosaii cosaii-app-server
+            asset="release/cosaii-${{ matrix.os }}-${{ matrix.arch }}.tar.gz"
+          fi
+          name="$(basename "$asset")"
+          if command -v sha256sum >/dev/null 2>&1; then
+            (cd release && sha256sum "$name" > "$name.sha256")
+          else
+            (cd release && shasum -a 256 "$name" > "$name.sha256")
+          fi
+      - uses: anchore/sbom-action@v0
+        with:
+          path: release/bin
+          format: spdx-json
+          output-file: release/cosaii-${{ matrix.os }}-${{ matrix.arch }}.spdx.json
+      - uses: sigstore/cosign-installer@v3
+      - name: Keyless-sign release files
+        shell: bash
+        run: |
+          for file in release/*.{gz,zip,json}; do
+            [ -f "$file" ] || continue
+            cosign sign-blob --yes "$file" --bundle "$file.sigstore.json"
+          done
+      - uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: "release/*"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cosaii-${{ matrix.os }}-${{ matrix.arch }}
+          path: release/*
+
+  publish:
+    if: startsWith(github.ref, 'refs/tags/cosaii-v')
+    needs: binaries
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 24, registry-url: "https://registry.npmjs.org" }
+      - uses: actions/download-artifact@v4
+        with: { path: release, merge-multiple: true }
+      - name: Assemble npm platform packages
+        shell: bash
+        run: |
+          set -euo pipefail
+          for spec in linux-x64 linux-arm64 macos-x64 macos-arm64 windows-x64 windows-arm64; do
+            os="${spec%-*}"; arch="${spec##*-}"
+            npm_os="$os"; [ "$os" = macos ] && npm_os=darwin; [ "$os" = windows ] && npm_os=win32
+            pkg="packages/cosaii-${npm_os}-${arch}"
+            mkdir -p "$pkg/bin"
+            if [ "$os" = windows ]; then
+              7z x -y "release/cosaii-${spec}.zip" "-o$pkg/bin"
+            else
+              tar -xzf "release/cosaii-${spec}.tar.gz" -C "$pkg/bin"
+            fi
+          done
+      - name: Publish npm launcher and native packages
+        run: |
+          for pkg in packages/cosaii-darwin-{x64,arm64} packages/cosaii-linux-{x64,arm64} packages/cosaii-win32-{x64,arm64}; do
+            npm publish "$pkg" --access public --provenance
+          done
+          npm publish packages/cosaii-launcher --access public --provenance
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: release/*
+          generate_release_notes: true

@@ -1,0 +1,150 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import json
+import re
+import sys
+import xml.etree.ElementTree as ET
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[1]
+REQUIRED = (
+    "VERSION",
+    "pyproject.toml",
+    "debian/control",
+    "config/package-lists/mythos.list.chroot",
+    "data/calamares/settings.conf",
+    "data/calamares/modules/partition.conf",
+    "data/systemd/system/mythos-offline-update.service",
+    "data/shell-extension/extension.js",
+    "debian/copyright",
+    "scripts/verify-image",
+    "scripts/boot-smoke-test",
+)
+
+
+def fail(message: str) -> None:
+    print(f"validation: {message}", file=sys.stderr)
+    raise SystemExit(1)
+
+
+for relative in REQUIRED:
+    if not (ROOT / relative).is_file():
+        fail(f"missing {relative}")
+
+for source in (ROOT / "data/catalog").glob("*.json"):
+    with source.open(encoding="utf-8") as handle:
+        value = json.load(handle)
+    if value.get("schema") != 1:
+        fail(f"unsupported schema in {source.relative_to(ROOT)}")
+
+for source in list((ROOT / "data/metainfo").glob("*.xml")) + list((ROOT / "data/mime").glob("*.xml")):
+    ET.parse(source)
+
+packages = []
+for line in (ROOT / "config/package-lists/mythos.list.chroot").read_text(encoding="utf-8").splitlines():
+    value = line.strip()
+    if value and not value.startswith("#"):
+        packages.append(value)
+duplicates = sorted({item for item in packages if packages.count(item) > 1})
+if duplicates:
+    fail("duplicate image packages: " + ", ".join(duplicates))
+if "mythos-core" not in packages:
+    fail("image does not install mythos-core")
+
+desktop_ids = {item.name for item in (ROOT / "data/applications").glob("*.desktop")}
+for required in ("org.mythos.SystemHub.desktop", "org.mythos.Migration.desktop", "org.mythos.Open.desktop"):
+    if required not in desktop_ids:
+        fail(f"missing desktop entry {required}")
+
+osaii_shortcuts = {item.name for item in (ROOT / "data/osaii-applications").glob("*.desktop")}
+for required in ("org.osaii.Platform.desktop", "org.osaii.Studio.desktop", "org.osaii.Masque.desktop"):
+    if required not in osaii_shortcuts:
+        fail(f"missing optional OSAII desktop entry {required}")
+    if required in desktop_ids:
+        fail(f"optional OSAII desktop entry is installed by default: {required}")
+
+grub_generator = (ROOT / "data/grub/42_mythos_recovery").read_text(encoding="utf-8")
+if "(\\u0024recovery)" in grub_generator or "(\\$recovery)" not in grub_generator:
+    fail("recovery GRUB generator does not emit the recovery variable")
+
+calamares_settings = (ROOT / "data/calamares/settings.conf").read_text(encoding="utf-8")
+instances: dict[str, dict[str, str]] = {}
+current_instance: dict[str, str] | None = None
+in_instances = False
+for line in calamares_settings.splitlines():
+    if line and not line[0].isspace():
+        in_instances = line == "instances:"
+        continue
+    if not in_instances or not line.strip() or line.lstrip().startswith("#"):
+        continue
+    item = re.match(r"^\s*-\s+id:\s*(\S+)\s*$", line)
+    if item:
+        current_instance = {"id": item.group(1)}
+        if current_instance["id"] in instances:
+            fail(f"duplicate Calamares instance {current_instance['id']}")
+        instances[current_instance["id"]] = current_instance
+        continue
+    field = re.match(r"^\s+(module|config):\s*(\S+)\s*$", line)
+    if field and current_instance is not None:
+        current_instance[field.group(1)] = field.group(2)
+
+sequence_refs = set(
+    re.findall(
+        r"^\s{4,}-\s+([A-Za-z0-9_.-]+(?:@[A-Za-z0-9_.-]+)?)\s*$",
+        calamares_settings,
+        re.MULTILINE,
+    )
+)
+for instance_id, instance in instances.items():
+    module = instance.get("module")
+    config = instance.get("config")
+    if not module or not config:
+        fail(f"incomplete Calamares instance {instance_id}")
+    instance_key = f"{module}@{instance_id}"
+    if instance_key not in sequence_refs:
+        fail(f"Calamares instance must be referenced as {instance_key}")
+    if instance_id in sequence_refs:
+        fail(f"Calamares sequence uses bare instance id {instance_id}")
+    if not (ROOT / "data/calamares/modules" / config).is_file():
+        fail(f"missing Calamares instance config {config}")
+
+for instance_key in sorted(ref for ref in sequence_refs if "@" in ref):
+    module, instance_id = instance_key.split("@", 1)
+    instance = instances.get(instance_id)
+    if instance is None or instance.get("module") != module:
+        fail(f"undefined Calamares instance {instance_key}")
+
+dconf_defaults = (ROOT / "data/dconf/00-mythos").read_text(encoding="utf-8")
+for setting in (
+    "color-scheme='prefer-dark'",
+    "velvet-rays.png",
+    "button-layout='close,minimize,maximize:'",
+    "'blur-my-shell@aunetx'",
+    "panel-lengths='{\"0\":90}'",
+    "trans-use-custom-opacity=true",
+    "scaling-factor=uint32 0",
+    "text-scaling-factor=1.0",
+    "auto-maximize=true",
+    "'scale-monitor-framebuffer'",
+    "'xwayland-native-scaling'",
+    "welcome-dialog-last-shown-version='999.0'",
+    "extension-version=9999",
+    "update-notifier-enabled=false",
+    "[org/gnome/desktop/notifications/application/org-gnome-software]",
+    "enable=false",
+):
+    if setting not in dconf_defaults:
+        fail(f"first-login notice suppression is missing {setting}")
+
+for wallpaper in ("aurora-glass.png", "neon-spectrum.png", "velvet-rays.png", "neon-circuit.png"):
+    if not (ROOT / "data/wallpapers" / wallpaper).is_file():
+        fail(f"missing bundled wallpaper {wallpaper}")
+
+readme = (ROOT / "README.md").read_text(encoding="utf-8")
+for relative in ("docs/architecture.md", "docs/security.md", "docs/release-acceptance.md"):
+    if f"({relative})" in readme and not (ROOT / relative).is_file():
+        fail(f"README links missing file {relative}")
+
+print(f"validation: ok ({len(packages)} image packages, {len(desktop_ids)} desktop entries)")

@@ -1,0 +1,11 @@
+[Unit]
+Description=MythOS desktop readiness marker
+After=graphical-session.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/dbus-update-activation-environment --systemd DISPLAY WAYLAND_DISPLAY XDG_CURRENT_DESKTOP
+
+[Install]
+WantedBy=graphical-session.target
+

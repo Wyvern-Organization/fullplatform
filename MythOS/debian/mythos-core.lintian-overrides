@@ -1,0 +1,4 @@
+# system-update.target is the freedesktop offline-update protocol target.
+mythos-core: systemd-service-file-refers-to-unusual-wantedby-target system-update.target [usr/lib/systemd/system/mythos-offline-update.service]
+# The installer is deliberately live-only; TryExec hides it after Calamares is removed.
+mythos-core: desktop-command-not-in-package calamares-install-debian [usr/share/applications/calamares-install-debian.desktop]

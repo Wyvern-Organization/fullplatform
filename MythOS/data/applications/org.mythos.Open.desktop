@@ -1,0 +1,11 @@
+[Desktop Entry]
+Name=MythOS Application Installer
+Comment=Check compatibility and open portable applications safely
+Exec=mythos-open %f
+Icon=org.mythos.Open
+Terminal=false
+Type=Application
+NoDisplay=true
+MimeType=application/vnd.microsoft.portable-executable;application/x-ms-dos-executable;application/x-msdownload;application/x-msi;application/vnd.appimage;application/x-apple-diskimage;
+StartupNotify=true
+

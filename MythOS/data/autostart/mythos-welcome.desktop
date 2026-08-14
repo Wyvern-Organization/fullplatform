@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=MythOS Welcome
+Exec=mythos-welcome
+Icon=org.mythos.Welcome
+Terminal=false
+Type=Application
+OnlyShowIn=GNOME;
+X-GNOME-Autostart-enabled=true
+X-GNOME-Autostart-Phase=Applications
+

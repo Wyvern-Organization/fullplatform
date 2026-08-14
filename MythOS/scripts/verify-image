@@ -1,0 +1,98 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
+VERSION="$(tr -d '[:space:]' < "${PROJECT_ROOT}/VERSION")"
+ARCH="${MYTHOS_ARCH:-amd64}"
+ISO="${1:-${PROJECT_ROOT}/.build/artifacts/mythos-${VERSION}-${ARCH}.iso}"
+CHECKSUM="${ISO}.sha256"
+
+if [[ ! -s "${ISO}" ]]; then
+    printf 'ISO not found: %s\n' "${ISO}" >&2
+    exit 2
+fi
+
+if [[ -s "${CHECKSUM}" ]]; then
+    (cd -- "$(dirname -- "${ISO}")" && sha256sum --check "$(basename -- "${CHECKSUM}")")
+fi
+
+inspection_dir="$(mktemp -d)"
+cleanup() {
+    rm -rf -- "${inspection_dir}"
+}
+trap cleanup EXIT
+
+xorriso -indev "${ISO}" -pvd_info > "${inspection_dir}/pvd.txt" 2>&1
+xorriso -indev "${ISO}" -report_el_torito as_mkisofs > "${inspection_dir}/eltorito.txt" 2>&1
+xorriso -osirrox on -indev "${ISO}" \
+    -extract /live/filesystem.squashfs "${inspection_dir}/filesystem.squashfs" \
+    -extract /live/filesystem.packages "${inspection_dir}/filesystem.packages" \
+    -extract /boot/grub/config.cfg "${inspection_dir}/grub-config.cfg" \
+    -extract /boot/grub/grub.cfg "${inspection_dir}/grub.cfg" \
+    -extract /boot/grub/efi.img "${inspection_dir}/efi.img" \
+    -extract /isolinux/isolinux.cfg "${inspection_dir}/isolinux.cfg" \
+    -extract /isolinux/live.cfg "${inspection_dir}/isolinux-live.cfg" \
+    > "${inspection_dir}/extract.txt" 2>&1
+
+if ! rg -q -- '-b .*(isolinux|syslinux)' "${inspection_dir}/eltorito.txt"; then
+    printf 'ISO does not advertise the BIOS El Torito image.\n' >&2
+    exit 3
+fi
+if ! rg -q -- '-e .*(efi|EFI)' "${inspection_dir}/eltorito.txt"; then
+    printf 'ISO does not advertise the UEFI El Torito image.\n' >&2
+    exit 3
+fi
+if ! rg -F -q -- '-isohybrid-gpt-basdat' "${inspection_dir}/eltorito.txt"; then
+    printf 'ISO does not contain the GPT EFI hybrid partition required for USB UEFI boot.\n' >&2
+    exit 3
+fi
+if ! rg -F -q -- '-isohybrid-apm-hfsplus' "${inspection_dir}/eltorito.txt"; then
+    printf 'ISO does not contain the Apple Partition Map/HFS+ hybrid entry required for Intel Mac discovery.\n' >&2
+    exit 3
+fi
+if ! mdir -i "${inspection_dir}/efi.img" ::/EFI/BOOT/ 2>/dev/null | rg -qi 'bootx64[[:space:]]+efi'; then
+    printf 'ISO EFI image is missing the x86_64 fallback bootloader (EFI/BOOT/BOOTX64.EFI).\n' >&2
+    exit 3
+fi
+
+if ! rg -q '^set timeout=5$' "${inspection_dir}/grub-config.cfg"; then
+    printf 'UEFI boot menu does not auto-start the live system.\n' >&2
+    exit 3
+fi
+if ! rg -q '^timeout 50$' "${inspection_dir}/isolinux.cfg"; then
+    printf 'BIOS boot menu does not auto-start the live system.\n' >&2
+    exit 3
+fi
+for menu in "${inspection_dir}/grub.cfg" "${inspection_dir}/isolinux-live.cfg"; do
+    for choice in 'Try MythOS' 'Install MythOS' 'Repair an existing installation'; do
+        if ! rg -F -q "${choice}" "${menu}"; then
+            printf 'Boot menu is missing choice: %s\n' "${choice}" >&2
+            exit 3
+        fi
+    done
+done
+
+for package in mythos-core gnome-core calamares flatpak snapper; do
+    if ! rg -q "^${package}[[:space:]]" "${inspection_dir}/filesystem.packages"; then
+        printf 'Required image package is absent: %s\n' "${package}" >&2
+        exit 4
+    fi
+done
+
+unsquashfs -ll "${inspection_dir}/filesystem.squashfs" > "${inspection_dir}/squashfs.txt"
+for path in \
+    squashfs-root/usr/bin/mythos \
+    squashfs-root/usr/bin/mythosctl \
+    squashfs-root/usr/share/applications/org.mythos.SystemHub.desktop \
+    squashfs-root/usr/share/gnome-shell/extensions/mythos-shell@mythos.local/extension.js \
+    squashfs-root/etc/calamares/settings.conf \
+    squashfs-root/usr/lib/systemd/system/mythos-offline-update.service; do
+    if ! rg -F -q "${path}" "${inspection_dir}/squashfs.txt"; then
+        printf 'Required image path is absent: %s\n' "${path#squashfs-root}" >&2
+        exit 5
+    fi
+done
+
+iso_size="$(stat --format='%s' "${ISO}")"
+printf 'image verification: ok (%s bytes, BIOS + UEFI + Intel Mac, required payload present)\n' "${iso_size}"

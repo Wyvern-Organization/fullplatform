@@ -1,0 +1,71 @@
+{
+  "schema": 1,
+  "profiles": {
+    "windows-apps": {
+      "name": "Windows apps",
+      "description": "Runs each Windows app in a managed Bottles container.",
+      "packages": [],
+      "flatpaks": ["com.usebottles.bottles"]
+    },
+    "gaming": {
+      "name": "Gaming",
+      "description": "Steam, Proton management, GameMode, controller rules, Vulkan tools, and performance overlays.",
+      "packages": ["gamemode", "mangohud", "mesa-vulkan-drivers", "steam-devices", "vulkan-tools"],
+      "flatpaks": ["com.valvesoftware.Steam", "net.davidotek.pupgui2"]
+    },
+    "appimages": {
+      "name": "Portable apps",
+      "description": "Integrates AppImages into the application launcher.",
+      "packages": [],
+      "flatpaks": ["it.mijorus.gearlever"]
+    },
+    "macos-apps": {
+      "name": "macOS Apps (experimental)",
+      "description": "Builds pinned GPL-3.0 Darling with experimental Metal-over-Vulkan. Needs 25 GiB temporary disk space; compatibility is per app.",
+      "packages": ["bison", "clang", "cmake", "flex", "git", "git-lfs", "libavcodec-dev", "libavformat-dev", "libbsd-dev", "libc6-dev-i386", "libcairo2-dev", "libcap2-bin", "libcurl4-openssl-dev", "libdbus-1-dev", "libedit-dev", "libegl1-mesa-dev", "libfontconfig1-dev", "libfreetype6-dev", "libfuse-dev", "libgif-dev", "libgl1-mesa-dev", "libglu1-mesa-dev", "libpulse-dev", "libssl-dev", "libswresample-dev", "libtiff5-dev", "libudev-dev", "libvulkan-dev", "libxkbfile-dev", "libxcursor-dev", "libxml2-dev", "libxrandr-dev", "llvm-dev", "pkg-config", "xz-utils"],
+      "flatpaks": []
+    },
+    "local-ai": {
+      "name": "Local AI",
+      "description": "A local-first chat, writing, OCR, and image-description application. Model downloads are separate.",
+      "packages": [],
+      "flatpaks": ["com.jeffser.Alpaca"]
+    },
+    "osaii-web-apps": {
+      "name": "OSAII web apps",
+      "description": "Optional browser shortcuts for OSAII Platform, OSS Studio, and Masque. No local account or files are shared.",
+      "packages": [],
+      "flatpaks": []
+    },
+    "backup-plus": {
+      "name": "Advanced backups",
+      "description": "Borg-based backups for external drives, NAS locations, and encrypted repositories.",
+      "packages": [],
+      "flatpaks": ["org.gnome.World.PikaBackup"]
+    },
+    "developer": {
+      "name": "Developer mode",
+      "description": "Git, Python tooling, rootless containers, SDK helpers, and build essentials.",
+      "packages": ["build-essential", "distrobox", "git", "podman", "python3-pip", "python3-venv"],
+      "flatpaks": []
+    },
+    "virtualization": {
+      "name": "Virtual machines",
+      "description": "GNOME Boxes and advanced libvirt management with UEFI firmware.",
+      "packages": ["gnome-boxes", "libvirt-daemon-system", "ovmf", "qemu-system-x86", "virt-manager"],
+      "flatpaks": []
+    },
+    "native-packages": {
+      "name": "Advanced package manager",
+      "description": "A graphical native Debian package manager for power users.",
+      "packages": ["synaptic"],
+      "flatpaks": []
+    },
+    "snap": {
+      "name": "Snap support",
+      "description": "Installs the optional Snap runtime. It stays absent and disabled by default.",
+      "packages": ["snapd"],
+      "flatpaks": []
+    }
+  }
+}

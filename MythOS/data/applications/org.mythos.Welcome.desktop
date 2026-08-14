@@ -1,0 +1,11 @@
+[Desktop Entry]
+Name=Welcome to MythOS
+Comment=Get started with MythOS
+Exec=mythos-welcome --force
+Icon=org.mythos.Welcome
+Terminal=false
+Type=Application
+Categories=System;
+Keywords=Welcome;Setup;Start;
+StartupNotify=true
+

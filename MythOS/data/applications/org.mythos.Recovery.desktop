@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=Recovery
+Comment=Diagnose, repair, reset, and restore MythOS
+Exec=mythos-recovery
+Icon=org.mythos.Recovery
+Terminal=false
+Type=Application
+Categories=Settings;
+Keywords=Recovery;Repair;Reset;Rollback;Snapshot;Diagnostics;
+StartupNotify=true

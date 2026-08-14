@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=System Hub
+Comment=Updates, drivers, recovery, backup, privacy, and optional features
+Exec=mythos
+Icon=org.mythos.SystemHub
+Terminal=false
+Type=Application
+Categories=GNOME;GTK;Settings;
+Keywords=Settings;Update;Driver;Recovery;Backup;Privacy;Hardware;
+StartupNotify=true

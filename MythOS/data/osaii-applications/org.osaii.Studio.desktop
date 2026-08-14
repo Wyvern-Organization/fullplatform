@@ -1,0 +1,11 @@
+[Desktop Entry]
+Name=OSS Studio
+Comment=Open the optional OSAII workspace
+Exec=xdg-open https://osaii.wyvernhub.net/studio/new
+Icon=applications-development-symbolic
+Terminal=false
+Type=Application
+Categories=Office;Development;
+Keywords=OSAII;AI;Chat;Agent;Studio;
+StartupNotify=true
+

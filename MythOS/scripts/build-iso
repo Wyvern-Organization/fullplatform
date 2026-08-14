@@ -1,0 +1,104 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
+BUILD_ROOT="${PROJECT_ROOT}/.build"
+WORK_DIR="${BUILD_ROOT}/live"
+CACHE_DIR="${BUILD_ROOT}/live-cache"
+ARTIFACT_DIR="${BUILD_ROOT}/artifacts"
+BUILDER_IMAGE="${MYTHOS_BUILDER_IMAGE:-mythos-builder:trixie-v1}"
+ARCH="${MYTHOS_ARCH:-amd64}"
+MIRROR="${MYTHOS_MIRROR:-https://deb.debian.org/debian}"
+VERSION="$(tr -d '[:space:]' < "${PROJECT_ROOT}/VERSION")"
+
+if [[ "${WORK_DIR}" != "${PROJECT_ROOT}/.build/live" ]]; then
+    printf 'Refusing unexpected build directory: %s\n' "${WORK_DIR}" >&2
+    exit 2
+fi
+
+"${SCRIPT_DIR}/build-package"
+mkdir -p "${WORK_DIR}" "${CACHE_DIR}" "${ARTIFACT_DIR}"
+
+docker run --rm --privileged \
+    --env "ARCH=${ARCH}" \
+    --env "MIRROR=${MIRROR}" \
+    --env "VERSION=${VERSION}" \
+    --env "HOST_UID=$(id -u)" \
+    --env "HOST_GID=$(id -g)" \
+    --volume "${PROJECT_ROOT}:/src:ro" \
+    --volume "${BUILD_ROOT}:/build" \
+    "${BUILDER_IMAGE}" \
+    bash -euc '
+        work=/build/live
+        cache=/build/live-cache
+        artifacts=/build/artifacts
+        restore_cache() {
+            if [ -d "${work}/cache" ]; then
+                mv "${work}/cache" "${cache}"
+            fi
+            # The bootstrap cache is a root filesystem. Changing its ownership
+            # to the invoking desktop user corrupts the next image assembled
+            # from that cache, so only hand the finished artifacts back.
+            chown -R "${HOST_UID}:${HOST_GID}" "${artifacts}" 2>/dev/null || true
+        }
+        trap restore_cache EXIT
+
+        find "${work}" -mindepth 1 -delete
+        mv "${cache}" "${work}/cache"
+        # Repair caches produced by build scripts predating the ownership
+        # invariant above. These are system and package-manager caches.
+        if [ -d "${work}/cache" ]; then
+            chown -R 0:0 "${work}/cache"
+        fi
+        cd "${work}"
+        lb config \
+            --mode debian \
+            --distribution trixie \
+            --architecture "${ARCH}" \
+            --archive-areas "main contrib non-free non-free-firmware" \
+            --parent-archive-areas "main contrib non-free non-free-firmware" \
+            --binary-image iso-hybrid \
+            --bootloaders "syslinux grub-efi" \
+            --debian-installer none \
+            --uefi-secure-boot enable \
+            --firmware-binary true \
+            --firmware-chroot true \
+            --apt-recommends true \
+            --security true \
+            --updates true \
+            --backports false \
+            --checksums sha256 \
+            --chroot-filesystem squashfs \
+            --chroot-squashfs-compression-type zstd \
+            --chroot-squashfs-compression-level 15 \
+            --mirror-bootstrap "${MIRROR}" \
+            --mirror-chroot "${MIRROR}" \
+            --mirror-binary "${MIRROR}" \
+            --iso-application "MythOS ${VERSION}" \
+            --iso-publisher "MythOS Build Team" \
+            --iso-volume "MYTHOS_1_0" \
+            --image-name "mythos-${VERSION}" \
+            --bootappend-live "boot=live components quiet splash username=consumer hostname=mythos locales=en_US.UTF-8 keyboard-layouts=us"
+
+        # Source files arrive through a bind mount owned by the invoking user;
+        # live-build preserves metadata when it copies includes into the image.
+        rsync -a --chown=0:0 /src/config/ "${work}/config/"
+        mkdir -p "${work}/config/packages.chroot"
+        cp "${artifacts}"/mythos-core_*_all.deb "${work}/config/packages.chroot/"
+        chmod 0755 "${work}"/config/hooks/normal/*.hook.chroot
+        lb build 2>&1 | tee "${artifacts}/iso-build.log"
+
+        iso="${work}/mythos-${VERSION}-${ARCH}.hybrid.iso"
+        if [ ! -s "${iso}" ]; then
+            printf "Expected ISO was not produced: %s\n" "${iso}" >&2
+            exit 3
+        fi
+        install -m 0644 "${iso}" "${artifacts}/mythos-${VERSION}-${ARCH}.iso"
+        cd "${artifacts}"
+        sha256sum "mythos-${VERSION}-${ARCH}.iso" > "mythos-${VERSION}-${ARCH}.iso.sha256"
+    '
+
+"${SCRIPT_DIR}/verify-image" "${ARTIFACT_DIR}/mythos-${VERSION}-${ARCH}.iso"
+
+printf 'ISO: %s\n' "${ARTIFACT_DIR}/mythos-${VERSION}-${ARCH}.iso"

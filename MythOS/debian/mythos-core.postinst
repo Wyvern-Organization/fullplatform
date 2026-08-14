@@ -1,0 +1,28 @@
+#!/bin/sh
+set -e
+
+if command -v dconf >/dev/null 2>&1; then
+    dconf update || true
+fi
+
+if command -v glib-compile-schemas >/dev/null 2>&1; then
+    glib-compile-schemas /usr/share/glib-2.0/schemas || true
+fi
+
+if command -v update-initramfs >/dev/null 2>&1 && [ -d /lib/modules ]; then
+    update-initramfs -u -k all || true
+fi
+
+if command -v update-grub >/dev/null 2>&1 && [ -d /boot/grub ]; then
+    update-grub || true
+fi
+
+# Run only idempotent MythOS-owned state migrations. This keeps normal APT
+# upgrades and standalone release bundles on the same in-place update path.
+if command -v python3 >/dev/null 2>&1; then
+    python3 -m mythos.upgrade --post-install
+fi
+
+#DEBHELPER#
+
+exit 0

@@ -1,0 +1,58 @@
+Source: mythos
+Section: admin
+Priority: optional
+Maintainer: MythOS Build Team <build@mythos.invalid>
+Build-Depends:
+ debhelper-compat (= 13),
+ dh-python,
+ pybuild-plugin-pyproject,
+ python3-all,
+ python3-pytest,
+ python3-setuptools
+Standards-Version: 4.7.2
+Rules-Requires-Root: no
+
+Package: mythos-core
+Architecture: all
+Depends:
+ ${misc:Depends},
+ ${python3:Depends},
+ apt,
+ btrfs-progs,
+ dconf-cli,
+ flatpak,
+ fwupd,
+ gir1.2-adw-1,
+ gir1.2-gtk-4.0,
+ initramfs-tools,
+ pciutils,
+ polkitd,
+ python3-gi,
+ python3-dbus,
+ rfkill,
+ rsync,
+ smartmontools,
+ snapper,
+ systemd,
+ usbutils
+Recommends:
+ apparmor,
+ bolt,
+ deja-dup,
+ gnome-firmware,
+ gnome-software,
+ network-manager,
+ packagekit-tools,
+ switcheroo-control
+Suggests:
+ calamares,
+ gamemode,
+ podman,
+ steam-installer,
+ wine
+Replaces:
+ calamares-settings-debian
+Description: MythOS desktop, update, recovery, and compatibility tools
+ Native graphical and command-line control plane for MythOS. It provides
+ system status, transactional offline updates, hardware and firmware discovery,
+ recovery, application compatibility, migration, and optional feature profiles.

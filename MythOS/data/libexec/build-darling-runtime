@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Builds a pinned Darling release. Upstream source and license details live in
+# docs/macos-compatibility.md and THIRD_PARTY_NOTICES.md.
+readonly SOURCE_URI="https://github.com/darlinghq/darling.git"
+readonly SOURCE_REVISION="e471d067655f887a22b6ae6cedbc224f40c037cf"
+readonly METAL_REVISION="f815654533fe0515f709bf4def29ae523b09414c"
+readonly PREFIX="/opt/mythos/darling"
+readonly WORK_ROOT="/var/cache/mythos/darling-build"
+readonly REQUIRED_KIB=$((25 * 1024 * 1024))
+
+fail() {
+    printf 'MythOS Darling setup: %s\n' "$*" >&2
+    exit 1
+}
+
+[[ "${EUID}" -eq 0 ]] || fail "administrator approval is required"
+[[ ! -e "${PREFIX}" ]] || fail "${PREFIX} already exists; preserve existing runtime or remove it manually before rebuilding"
+
+mkdir -p "${WORK_ROOT}"
+available_kib="$(df -Pk --output=avail "${WORK_ROOT}" | tail -n 1 | tr -d '[:space:]')"
+[[ "${available_kib}" =~ ^[0-9]+$ ]] || fail "cannot check free disk space"
+(( available_kib >= REQUIRED_KIB )) || fail "need at least 25 GiB free in ${WORK_ROOT}"
+
+workdir="$(mktemp -d "${WORK_ROOT}/build.XXXXXX")"
+cleanup() {
+    rm -rf -- "${workdir}"
+}
+trap cleanup EXIT
+
+export GIT_CLONE_PROTECTION_ACTIVE=false
+git clone --recursive "${SOURCE_URI}" "${workdir}/darling"
+cd "${workdir}/darling"
+git checkout --detach "${SOURCE_REVISION}"
+git submodule sync --recursive
+git submodule update --init --recursive
+[[ "$(git rev-parse HEAD)" == "${SOURCE_REVISION}" ]] || fail "Darling source revision mismatch"
+[[ "$(git -C src/external/metal rev-parse HEAD)" == "${METAL_REVISION}" ]] || fail "Darling Metal source revision mismatch"
+
+cmake -S . -B build \
+    -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+    -DCMAKE_INSTALL_PREFIX="${PREFIX}" \
+    -DENABLE_METAL=ON \
+    -DCOMPONENTS=stock
+cmake --build build --parallel "$(nproc)"
+cmake --install build
+
+install -d -m 0755 "${PREFIX}/share/mythos"
+cat > "${PREFIX}/share/mythos/runtime.json" <<EOF
+{
+  "source": "${SOURCE_URI}",
+  "darling_revision": "${SOURCE_REVISION}",
+  "darling_metal_revision": "${METAL_REVISION}",
+  "metal_enabled": true
+}
+EOF
+printf 'MythOS Darling runtime installed at %s\n' "${PREFIX}"

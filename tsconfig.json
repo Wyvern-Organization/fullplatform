@@ -1,0 +1,14 @@
+{
+  "extends": ["agents/tsconfig"],
+  "compilerOptions": {
+    "noEmit": true,
+    "types": [],
+    "skipLibCheck": true,
+    "allowSyntheticDefaultImports": true
+  },
+  "include": [
+    "worker-configuration.d.ts",
+    "src/**/*.ts",
+    "API/**/*.ts"
+  ]
+}

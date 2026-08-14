@@ -1,0 +1,21 @@
+[Default Applications]
+text/html=firefox-esr.desktop
+x-scheme-handler/http=firefox-esr.desktop
+x-scheme-handler/https=firefox-esr.desktop
+application/pdf=org.gnome.Papers.desktop
+image/jpeg=org.gnome.Loupe.desktop
+image/png=org.gnome.Loupe.desktop
+image/webp=org.gnome.Loupe.desktop
+video/mp4=org.gnome.Showtime.desktop
+video/x-matroska=org.gnome.Showtime.desktop
+application/vnd.appimage=org.mythos.Open.desktop
+application/x-ms-dos-executable=org.mythos.Open.desktop
+application/vnd.microsoft.portable-executable=org.mythos.Open.desktop
+application/x-msi=org.mythos.Open.desktop
+
+[Added Associations]
+application/vnd.appimage=org.mythos.Open.desktop;
+application/x-ms-dos-executable=org.mythos.Open.desktop;
+application/vnd.microsoft.portable-executable=org.mythos.Open.desktop;
+application/x-msi=org.mythos.Open.desktop;
+

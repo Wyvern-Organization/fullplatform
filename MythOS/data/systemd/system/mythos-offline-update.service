@@ -1,0 +1,21 @@
+[Unit]
+Description=Install the staged MythOS system update
+Documentation=man:systemd.offline-updates(7)
+DefaultDependencies=no
+Requires=sysinit.target
+RequiresMountsFor=/var/lib/mythos /var/cache/apt
+After=sysinit.target system-update-pre.target
+Before=system-update.target shutdown.target
+Conflicts=shutdown.target
+FailureAction=reboot
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/mythosctl update apply-offline
+ExecStartPost=-/usr/bin/systemctl --no-block reboot
+StandardOutput=journal+console
+StandardError=journal+console
+TimeoutStartSec=2h
+
+[Install]
+WantedBy=system-update.target

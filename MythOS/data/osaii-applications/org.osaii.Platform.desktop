@@ -1,0 +1,11 @@
+[Desktop Entry]
+Name=OSAII Platform
+Comment=Open the optional OSAII Platform services
+Exec=xdg-open https://osaii.wyvernhub.net/
+Icon=web-browser-symbolic
+Terminal=false
+Type=Application
+Categories=Network;
+Keywords=OSAII;AI;Platform;
+StartupNotify=true
+

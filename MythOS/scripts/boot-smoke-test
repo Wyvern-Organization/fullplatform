@@ -1,0 +1,107 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
+VERSION="$(tr -d '[:space:]' < "${PROJECT_ROOT}/VERSION")"
+ARCH="${MYTHOS_ARCH:-amd64}"
+ISO="${1:-${PROJECT_ROOT}/.build/artifacts/mythos-${VERSION}-${ARCH}.iso}"
+ARTIFACT_DIR="${PROJECT_ROOT}/.build/artifacts"
+OVMF_CODE="${MYTHOS_OVMF_CODE:-/usr/share/OVMF/OVMF_CODE_4M.secboot.fd}"
+OVMF_VARS="${MYTHOS_OVMF_VARS:-/usr/share/OVMF/OVMF_VARS_4M.ms.fd}"
+
+if [[ -r /dev/kvm && -w /dev/kvm ]]; then
+    QEMU_ACCEL="kvm"
+    QEMU_CPU="host"
+    DEFAULT_WAIT=75
+else
+    QEMU_ACCEL="tcg"
+    QEMU_CPU="max"
+    DEFAULT_WAIT=180
+fi
+WAIT_SECONDS="${MYTHOS_SMOKE_WAIT:-${DEFAULT_WAIT}}"
+TIMEOUT_SECONDS="$((WAIT_SECONDS + 45))"
+if (( WAIT_SECONDS < 20 )); then
+    printf 'Smoke wait must be at least 20 seconds.\n' >&2
+    exit 2
+fi
+
+"${SCRIPT_DIR}/verify-image" "${ISO}"
+
+for required in qemu-system-x86_64 identify convert; do
+    if ! command -v "${required}" >/dev/null 2>&1; then
+        printf 'Required smoke-test command is unavailable: %s\n' "${required}" >&2
+        exit 2
+    fi
+done
+for firmware in "${OVMF_CODE}" "${OVMF_VARS}"; do
+    if [[ ! -s "${firmware}" ]]; then
+        printf 'Secure Boot firmware is unavailable: %s\n' "${firmware}" >&2
+        exit 2
+    fi
+done
+
+mkdir -p "${ARTIFACT_DIR}"
+smoke_dir="$(mktemp -d)"
+cleanup() {
+    rm -rf -- "${smoke_dir}"
+}
+trap cleanup EXIT
+
+vars_copy="${smoke_dir}/OVMF_VARS.fd"
+screen_ppm="${smoke_dir}/screen.ppm"
+screen_png="${ARTIFACT_DIR}/boot-smoke-uefi.png"
+monitor_log="${ARTIFACT_DIR}/boot-smoke-uefi.log"
+cp -- "${OVMF_VARS}" "${vars_copy}"
+
+set +e
+{
+    sleep 8
+    printf 'sendkey ret\n'
+    sleep "$((WAIT_SECONDS - 8))"
+    printf 'screendump %s\n' "${screen_ppm}"
+    sleep 2
+    printf 'info status\nquit\n'
+} | timeout --signal=TERM "${TIMEOUT_SECONDS}" qemu-system-x86_64 \
+    -name MythOS-UEFI-smoke \
+    -machine "q35,smm=on,accel=${QEMU_ACCEL}" \
+    -cpu "${QEMU_CPU}" \
+    -smp 2 \
+    -m 3072 \
+    -boot menu=off,order=d \
+    -drive "if=pflash,format=raw,readonly=on,file=${OVMF_CODE}" \
+    -drive "if=pflash,format=raw,file=${vars_copy}" \
+    -global driver=cfi.pflash01,property=secure,value=on \
+    -cdrom "${ISO}" \
+    -device virtio-vga \
+    -nic none \
+    -display none \
+    -serial "file:${ARTIFACT_DIR}/boot-smoke-uefi-serial.log" \
+    -monitor stdio \
+    > "${monitor_log}" 2>&1
+qemu_status=$?
+set -e
+
+if [[ ${qemu_status} -ne 0 && ${qemu_status} -ne 124 ]]; then
+    printf 'QEMU smoke boot failed with status %s. See %s\n' "${qemu_status}" "${monitor_log}" >&2
+    exit 3
+fi
+if [[ ! -s "${screen_ppm}" ]]; then
+    printf 'QEMU did not produce a graphical boot capture. See %s\n' "${monitor_log}" >&2
+    exit 4
+fi
+
+convert "${screen_ppm}" "${screen_png}"
+colors="$(identify -format '%k' "${screen_png}")"
+mean="$(identify -format '%[fx:mean]' "${screen_png}")"
+if (( colors < 32 )); then
+    printf 'Graphical capture has only %s colors; the live desktop did not render reliably.\n' "${colors}" >&2
+    exit 5
+fi
+if ! awk -v value="${mean}" 'BEGIN { exit !(value > 0.08 && value < 0.99) }'; then
+    printf 'Graphical capture brightness (%s) indicates a blank display.\n' "${mean}" >&2
+    exit 5
+fi
+
+printf 'UEFI Secure Boot smoke: graphical capture produced (%s colors, mean %s)\n' "${colors}" "${mean}"
+printf 'Capture: %s\n' "${screen_png}"

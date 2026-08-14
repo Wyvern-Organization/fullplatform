@@ -1,0 +1,13 @@
+[Unit]
+Description=Confirm a healthy boot after a MythOS update
+Documentation=man:mythosctl(1)
+ConditionPathExists=!/run/live/medium
+After=graphical.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/mythosctl update bless
+TimeoutStartSec=2min
+
+[Install]
+WantedBy=graphical.target

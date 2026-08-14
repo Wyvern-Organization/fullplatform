@@ -1,0 +1,25 @@
+#!/bin/sh
+set -eu
+
+# A live filesystem must never inherit the workstation user's numeric owner
+# from bind-mounted source or cache directories. Besides producing noisy
+# security warnings, that would make core OS files writable by the first user.
+for path in / /bin /etc /home /lib /root /sbin /srv /usr /var; do
+    owner="$(stat -c '%u:%g' "${path}")"
+    if [ "${owner}" != "0:0" ]; then
+        printf 'MythOS image ownership invariant failed: %s is %s\n' \
+            "${path}" "${owner}" >&2
+        exit 1
+    fi
+done
+
+# Package archives may retain harmless host metadata while live-build is using
+# them; they are moved back to the external cache before SquashFS assembly.
+orphan="$(find / -xdev \
+    \( -path /live-build -o -path /var/cache/apt/archives \) -prune -o \
+    \( -nouser -o -nogroup \) -print -quit 2>/dev/null || true)"
+if [ -n "${orphan}" ]; then
+    printf 'MythOS image contains an orphan-owned path: %s\n' \
+        "${orphan}" >&2
+    exit 1
+fi

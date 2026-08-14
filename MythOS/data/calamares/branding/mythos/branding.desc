@@ -1,0 +1,36 @@
+---
+componentName: mythos
+welcomeStyleCalamares: false
+welcomeExpandingLogo: true
+windowExpanding: normal
+windowSize: 1024px,680px
+windowPlacement: center
+sidebar: widget
+navigation: widget
+strings:
+  productName: "MythOS"
+  shortProductName: "MythOS"
+  version: "1.0"
+  shortVersion: "1.0"
+  versionedName: "MythOS 1.0"
+  shortVersionedName: "MythOS 1"
+  bootloaderEntryName: "MythOS"
+  productUrl: ""
+  supportUrl: ""
+  knownIssuesUrl: ""
+  releaseNotesUrl: ""
+  donateUrl: ""
+images:
+  productIcon: "mythos.svg"
+  productLogo: "mythos.svg"
+  productWelcome: "welcome.svg"
+style:
+  SidebarBackground: "#172033"
+  SidebarText: "#F7F8FC"
+  SidebarTextCurrent: "#FFFFFF"
+  SidebarBackgroundCurrent: "#4C6FFF"
+slideshow: "show.qml"
+slideshowAPI: 2
+uploadServer:
+  type: none
+

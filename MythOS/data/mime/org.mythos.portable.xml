@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mime-info xmlns="http://www.freedesktop.org/standards/shared-mime-info">
+  <mime-type type="application/vnd.appimage">
+    <comment>AppImage portable application</comment>
+    <glob pattern="*.AppImage"/>
+    <glob pattern="*.appimage"/>
+    <magic priority="80">
+      <match type="string" offset="8" value="AI"/>
+    </magic>
+  </mime-type>
+</mime-info>
+

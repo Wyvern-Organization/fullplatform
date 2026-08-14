@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
+VERSION="$(tr -d '[:space:]' < "${PROJECT_ROOT}/VERSION")"
+ISO="${MYTHOS_VM_ISO:-${PROJECT_ROOT}/.build/artifacts/mythos-${VERSION}-amd64.iso}"
+VM_DIR="${MYTHOS_VM_DIR:-${PROJECT_ROOT}/.build/vm}"
+DISK="${MYTHOS_VM_DISK:-${VM_DIR}/mythos-${VERSION}.qcow2}"
+DISK_SIZE="${MYTHOS_VM_DISK_SIZE:-64G}"
+
+for command in qemu-img qemu-system-x86_64; do
+    command -v "${command}" >/dev/null 2>&1 || { printf 'Missing VM command: %s\n' "${command}" >&2; exit 2; }
+done
+[[ -s "${ISO}" ]] || { printf 'MythOS ISO is missing: %s\n' "${ISO}" >&2; exit 2; }
+mkdir -p "${VM_DIR}"
+if [[ ! -e "${DISK}" ]]; then
+    qemu-img create -f qcow2 "${DISK}" "${DISK_SIZE}"
+fi
+qemu-img info "${DISK}"
+printf 'VM disk ready: %s\n' "${DISK}"
+printf 'Boot the installer with: MYTHOS_VM_RUN=1 %s\n' "$0"
+
+if [[ "${MYTHOS_VM_RUN:-0}" != 1 ]]; then
+    exit 0
+fi
+
+accel=tcg
+cpu=max
+if [[ -r /dev/kvm && -w /dev/kvm ]]; then
+    accel=kvm
+    cpu=host
+fi
+exec qemu-system-x86_64 \
+    -name MythOS-Installer \
+    -machine "q35,accel=${accel}" \
+    -cpu "${cpu}" \
+    -m 4096 -smp 4 \
+    -boot order=d \
+    -cdrom "${ISO}" \
+    -drive "file=${DISK},if=virtio,format=qcow2" \
+    -device virtio-vga

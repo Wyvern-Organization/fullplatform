@@ -1,0 +1,213 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE policyconfig PUBLIC "-//freedesktop//DTD PolicyKit Policy Configuration 1.0//EN" "http://www.freedesktop.org/standards/PolicyKit/1/policyconfig.dtd">
+<policyconfig>
+  <vendor>MythOS</vendor>
+  <vendor_url>https://mythos.invalid</vendor_url>
+  <action id="org.mythos.control.update-check">
+    <description>Check MythOS updates</description>
+    <message>Authentication is required to check MythOS updates</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+  </action>
+  <action id="org.mythos.control.update-stage">
+    <description>Stage MythOS updates</description>
+    <message>Authentication is required to stage MythOS updates</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+  </action>
+  <action id="org.mythos.control.update-channel">
+    <description>Change MythOS update channel</description>
+    <message>Authentication is required to change MythOS update channel</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+  </action>
+  <action id="org.mythos.control.drivers-install">
+    <description>Install MythOS driver packages</description>
+    <message>Authentication is required to install driver packages</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+  </action>
+  <action id="org.mythos.control.wifi-activate">
+    <description>Activate MythOS Wi-Fi recovery</description>
+    <message>Authentication is required to activate Wi-Fi recovery</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+  </action>
+  <action id="org.mythos.control.networking-activate">
+    <description>Activate MythOS networking recovery</description>
+    <message>Authentication is required to activate networking recovery</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+  </action>
+  <action id="org.mythos.control.firmware-update">
+    <description>Install device firmware updates</description>
+    <message>Authentication is required to install firmware updates</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+  </action>
+  <action id="org.mythos.control.snapshot-create">
+    <description>Create MythOS restore point</description>
+    <message>Authentication is required to create a restore point</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+  </action>
+  <action id="org.mythos.control.snapshot-rollback">
+    <description>Restore a MythOS snapshot</description>
+    <message>Authentication is required to restore a system snapshot</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+  </action>
+  <action id="org.mythos.control.network-repair">
+    <description>Repair MythOS networking</description>
+    <message>Authentication is required to repair networking</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+  </action>
+  <action id="org.mythos.control.preference-set">
+    <description>Change protected MythOS preferences</description>
+    <message>Authentication is required to change protected preferences</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+  </action>
+  <action id="org.mythos.control.remote-login">
+    <description>Change MythOS remote login</description>
+    <message>Authentication is required to change remote login</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+  </action>
+  <action id="org.mythos.control.feature-windows-apps">
+    <description>Install Windows Apps capability</description>
+    <message>Authentication is required to install this capability</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+  </action>
+  <action id="org.mythos.control.feature-gaming">
+    <description>Install Gaming capability</description>
+    <message>Authentication is required to install this capability</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+  </action>
+  <action id="org.mythos.control.feature-appimages">
+    <description>Install Portable Apps capability</description>
+    <message>Authentication is required to install this capability</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+  </action>
+  <action id="org.mythos.control.feature-macos-apps">
+    <description>Install macOS Apps capability</description>
+    <message>Authentication is required to install this capability</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+  </action>
+  <action id="org.mythos.control.feature-local-ai">
+    <description>Install Local AI capability</description>
+    <message>Authentication is required to install this capability</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+  </action>
+  <action id="org.mythos.control.feature-osaii-web-apps">
+    <description>Change optional OSAII web app shortcuts</description>
+    <message>Authentication is required to change optional OSAII shortcuts</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+  </action>
+  <action id="org.mythos.control.feature-backup-plus">
+    <description>Install Advanced Backups capability</description>
+    <message>Authentication is required to install this capability</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+  </action>
+  <action id="org.mythos.control.feature-developer">
+    <description>Install Developer capability</description>
+    <message>Authentication is required to install this capability</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+  </action>
+  <action id="org.mythos.control.feature-virtualization">
+    <description>Install Virtualization capability</description>
+    <message>Authentication is required to install this capability</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+  </action>
+  <action id="org.mythos.control.feature-native-packages">
+    <description>Install Native Packages capability</description>
+    <message>Authentication is required to install this capability</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+  </action>
+  <action id="org.mythos.control.feature-snap">
+    <description>Install Snap capability</description>
+    <message>Authentication is required to install this capability</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+  </action>
+</policyconfig>

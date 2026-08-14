@@ -1,0 +1,80 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+ALLOW_WITHOUT_SNAPSHOT=0
+ASSUME_YES=0
+
+usage() {
+    cat <<'EOF'
+Usage: install-mythos-in-place [--yes] [--allow-without-snapshot]
+
+Installs the MythOS package shipped beside this script. It never repartitions
+or formats a disk, preserves existing package configuration, and refuses a
+transaction that would remove packages. A Snapper pre-release snapshot is
+required unless --allow-without-snapshot is explicitly supplied.
+EOF
+}
+
+while (($#)); do
+    case "$1" in
+        --yes) ASSUME_YES=1 ;;
+        --allow-without-snapshot) ALLOW_WITHOUT_SNAPSHOT=1 ;;
+        --help|-h) usage; exit 0 ;;
+        *) printf 'Unknown option: %s\n' "$1" >&2; usage >&2; exit 2 ;;
+    esac
+    shift
+done
+
+if (( EUID != 0 )); then
+    printf 'Run this release installer as root.\n' >&2
+    exit 1
+fi
+if [[ -e /run/live/medium ]]; then
+    printf 'This installer updates an installed MythOS system, not a live session.\n' >&2
+    exit 1
+fi
+if [[ ! -r /etc/os-release ]] || ! grep -qx 'ID=mythos' /etc/os-release; then
+    printf 'Refusing to update a system that is not identified as MythOS.\n' >&2
+    exit 1
+fi
+if [[ -L /system-update ]]; then
+    printf 'Finish or cancel the pending offline update before installing a release bundle.\n' >&2
+    exit 1
+fi
+
+mapfile -t packages < <(find "${SCRIPT_DIR}" -maxdepth 1 -type f -name 'mythos-core_*.deb' -print | sort)
+if (( ${#packages[@]} != 1 )); then
+    printf 'Expected exactly one mythos-core_*.deb beside this script.\n' >&2
+    exit 1
+fi
+if [[ -f "${SCRIPT_DIR}/SHA256SUMS" ]]; then
+    (cd "${SCRIPT_DIR}" && sha256sum --check --strict SHA256SUMS)
+fi
+
+snapshot=""
+if command -v snapper >/dev/null 2>&1 && [[ "$(findmnt -nro FSTYPE --target / 2>/dev/null || true)" == "btrfs" ]]; then
+    snapshot="$(snapper -c root create --print-number --type pre --cleanup-algorithm number --userdata important=yes --description 'MythOS pre-release update' | tail -n 1)"
+    printf 'Created pre-release snapshot %s.\n' "${snapshot}"
+elif (( ! ALLOW_WITHOUT_SNAPSHOT )); then
+    printf 'A Btrfs Snapper snapshot is unavailable; rerun with --allow-without-snapshot only if you have an independent backup.\n' >&2
+    exit 1
+fi
+
+backup_dir="/var/lib/mythos/release-backups/$(date -u +%Y%m%dT%H%M%SZ)"
+install -d -m 0700 "${backup_dir}"
+for path in /etc/mythos /var/lib/mythos/update.json /var/lib/mythos/update-history.json; do
+    if [[ -e "${path}" ]]; then
+        cp -a --parents "${path}" "${backup_dir}"
+    fi
+done
+
+if (( ! ASSUME_YES )); then
+    printf 'Install %s in place? No partitions will be changed. [y/N] ' "$(basename "${packages[0]}")"
+    read -r response
+    [[ "${response}" =~ ^[Yy]([Ee][Ss])?$ ]] || exit 0
+fi
+
+apt-get install --yes --no-remove -o Dpkg::Options::=--force-confold "${packages[0]}"
+python3 -m mythos.upgrade --post-install
+printf 'MythOS release update installed in place. Backup: %s\n' "${backup_dir}"

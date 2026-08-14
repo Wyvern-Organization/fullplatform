@@ -1,8 +1,27 @@
 # OSAII Platform
 
-OSAII Platform is the umbrella for OSAII products and services. Its API and OSS Studio are separate, symbiotic surfaces: the API is for calling models from code, while Studio is the focused workspace for Chat, Agent, Agent Swarm, projects, tools, and deliverables. They share model access, accounts, safety, and usage.
+OSAII Platform is the umbrella for OSAII products and services. Its API and OSS Studio are separate, symbiotic surfaces: the API is for calling models from code, while Studio is the focused workspace for Chat, Agent, Agent Swarm, projects, tools, and deliverables. Masque is the separate character product, and MythOS is the desktop operating system. Shared services remain optional at each product boundary.
 
 Use the [Platform home](https://osaii.wyvernhub.net/) to understand the product boundary, then choose the surface that fits the work.
+
+## Cosaii CLI
+
+Cosaii (pronounced “cozy”) is the Platform’s local agent. `cosaii-app-server` is a persistent Rust runtime that owns authentication, encrypted local sessions, agent turns, tools, permissions, and optional remote control. `cosaii` is its thin OpenTUI/Solid client. Conversations stay on the local machine rather than synchronizing into Studio.
+
+```bash
+curl -fsSL https://osaii.wyvernhub.net/install/cosaii.sh | sh
+cosaii login
+cosaii
+```
+
+Development builds:
+
+```bash
+npm run cosaii:check
+npm run cosaii:build
+```
+
+The browser device flow lives under `/platform/api/cli/*`; scoped inference and Platform operations live under `/cosaii/api/v1/*`. The old browser `/cli` page has been removed.
 
 ## Platform API
 
@@ -36,6 +55,12 @@ The current focused interface is served at [`/studio/new`](https://osaii.wyvernh
 ### API + Studio
 
 The API and Studio are intentionally separate entry points inside one Platform. Prototype in Studio, then move the same model-backed workflow into `/api/v1` or `/api/ask`; or bring an API-backed service into Studio for inspection and iteration. A Platform account, safety boundary, model catalog, and usage view connect both surfaces.
+
+## MythOS
+
+The MythOS source now lives in [`MythOS/`](MythOS/). Its public overview is at [`/mythos`](https://osaii.wyvernhub.net/mythos), and [`/mythos/release.json`](https://osaii.wyvernhub.net/mythos/release.json) exposes bounded release and service-discovery metadata.
+
+MythOS does not require an OSAII account or ship OSAII launchers in the default application menu. Users may explicitly enable the `osaii-web-apps` feature in System Hub to add browser shortcuts for Platform, Studio, and Masque, then disable it to remove those shortcuts. Local operating-system identity and data are never transferred to the Platform.
 
 ## Local development
 

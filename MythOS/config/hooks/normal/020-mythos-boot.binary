@@ -1,0 +1,100 @@
+#!/bin/sh
+set -eu
+
+asset_dir="../config/boot-assets"
+grub_config="boot/grub/config.cfg"
+grub_menu="boot/grub/grub.cfg"
+syslinux_config="isolinux/isolinux.cfg"
+syslinux_menu="isolinux/menu.cfg"
+syslinux_live="isolinux/live.cfg"
+
+for required in \
+    "${asset_dir}/grub-splash.png" \
+    "${asset_dir}/syslinux-splash.png" \
+    "${grub_config}" \
+    "${grub_menu}" \
+    "${syslinux_config}" \
+    "${syslinux_live}"; do
+    if [ ! -s "${required}" ]; then
+        printf 'MythOS boot asset is missing: %s\n' "${required}" >&2
+        exit 1
+    fi
+done
+
+install -m 0644 "${asset_dir}/grub-splash.png" boot/grub/splash.png
+install -m 0644 "${asset_dir}/syslinux-splash.png" isolinux/splash.png
+
+sed -i -e '/^set timeout_style=/d' -e '/^set timeout=/d' "${grub_config}"
+sed -i '/^set default=0$/a set timeout_style=menu\nset timeout=5' "${grub_config}"
+kernel="$(awk '/^[[:space:]]*linux[[:space:]]+\/live\// { print $2; exit }' "${grub_menu}")"
+initrd="$(awk '/^[[:space:]]*initrd[[:space:]]+\/live\// { print $2; exit }' "${grub_menu}")"
+if [ -z "${kernel}" ] || [ -z "${initrd}" ]; then
+    printf 'Could not discover the live kernel and initramfs paths.\n' >&2
+    exit 1
+fi
+
+cat > "${grub_menu}" <<EOF
+# MythOS live boot menu. Generated from the kernel selected by live-build.
+menuentry "Try MythOS 1.0" --hotkey=t {
+    linux ${kernel} boot=live components quiet splash username=consumer hostname=mythos locales=en_US.UTF-8 keyboard-layouts=us findiso=\${iso_path} mythos.action=try
+    initrd ${initrd}
+}
+menuentry "Install MythOS 1.0" --hotkey=i {
+    linux ${kernel} boot=live components quiet splash username=consumer hostname=mythos locales=en_US.UTF-8 keyboard-layouts=us findiso=\${iso_path} mythos.action=install
+    initrd ${initrd}
+}
+menuentry "Repair an existing installation" --hotkey=r {
+    linux ${kernel} boot=live components quiet splash username=consumer hostname=recovery locales=en_US.UTF-8 keyboard-layouts=us findiso=\${iso_path} mythos.action=repair mythos.recovery=1
+    initrd ${initrd}
+}
+menuentry "Try MythOS (basic graphics)" {
+    linux ${kernel} boot=live components nomodeset username=consumer hostname=mythos locales=en_US.UTF-8 keyboard-layouts=us findiso=\${iso_path} mythos.action=try
+    initrd ${initrd}
+}
+
+submenu "Utilities" --hotkey=u {
+    source /boot/grub/theme.cfg
+    if [ "\${grub_platform}" = "efi" ]; then
+        menuentry "UEFI Firmware Settings" --hotkey=f {
+            fwsetup
+        }
+    fi
+    menuentry "Verify integrity of the boot medium" --hotkey=v {
+        linux ${kernel} boot=live components username=consumer hostname=mythos locales=en_US.UTF-8 keyboard-layouts=us findiso=\${iso_path} verify-checksums
+        initrd ${initrd}
+    }
+}
+EOF
+
+sed -i \
+    -e '/^ontimeout /d' \
+    -e 's/^timeout .*/timeout 50/' \
+    -e '/^timeout 50$/a ontimeout live-amd64' \
+    "${syslinux_config}"
+sed -i 's/menu title Boot menu/menu title MythOS 1.0/' "${syslinux_menu}"
+cat > "${syslinux_live}" <<'EOF'
+label live-amd64
+    menu label ^Try MythOS 1.0
+    menu default
+    linux /live/vmlinuz
+    initrd /live/initrd.img
+    append boot=live components quiet splash username=consumer hostname=mythos locales=en_US.UTF-8 keyboard-layouts=us mythos.action=try
+
+label install-amd64
+    menu label ^Install MythOS 1.0
+    linux /live/vmlinuz
+    initrd /live/initrd.img
+    append boot=live components quiet splash username=consumer hostname=mythos locales=en_US.UTF-8 keyboard-layouts=us mythos.action=install
+
+label repair-amd64
+    menu label ^Repair an existing installation
+    linux /live/vmlinuz
+    initrd /live/initrd.img
+    append boot=live components quiet splash username=consumer hostname=recovery locales=en_US.UTF-8 keyboard-layouts=us mythos.action=repair mythos.recovery=1
+
+label live-amd64-failsafe
+    menu label Try MythOS (basic graphics)
+    linux /live/vmlinuz
+    initrd /live/initrd.img
+    append boot=live components nomodeset username=consumer hostname=mythos locales=en_US.UTF-8 keyboard-layouts=us mythos.action=try
+EOF

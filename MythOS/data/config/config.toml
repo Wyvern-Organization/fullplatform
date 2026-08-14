@@ -1,0 +1,14 @@
+# Managed by MythOS System Hub.
+[system]
+channel = "stable"
+
+[privacy]
+diagnostics = false
+
+[appearance]
+transparency = false
+
+[features]
+macos_preview = false
+enabled = []
+

@@ -1,0 +1,11 @@
+[Desktop Entry]
+Name=Masque
+Comment=Open the optional OSAII character space
+Exec=xdg-open https://osaii.wyvernhub.net/masque
+Icon=avatar-default-symbolic
+Terminal=false
+Type=Application
+Categories=Game;
+Keywords=OSAII;AI;Characters;Masque;
+StartupNotify=true
+

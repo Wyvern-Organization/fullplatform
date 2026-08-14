@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
+VERSION="$(tr -d '[:space:]' < "${PROJECT_ROOT}/VERSION")"
+ARTIFACT_DIR="${PROJECT_ROOT}/.build/artifacts"
+RELEASE_NAME="mythos-${VERSION}-in-place-update"
+RELEASE_DIR="${ARTIFACT_DIR}/${RELEASE_NAME}"
+
+"${SCRIPT_DIR}/build-package"
+mapfile -t packages < <(find "${ARTIFACT_DIR}" -maxdepth 1 -type f -name 'mythos-core_*_all.deb' -print | sort)
+if (( ${#packages[@]} != 1 )); then
+    printf 'Expected exactly one MythOS package in %s\n' "${ARTIFACT_DIR}" >&2
+    exit 2
+fi
+
+rm -rf -- "${RELEASE_DIR}"
+mkdir -p "${RELEASE_DIR}"
+install -m 0644 "${packages[0]}" "${RELEASE_DIR}/"
+install -m 0755 "${SCRIPT_DIR}/install-mythos-in-place" "${RELEASE_DIR}/install-mythos-in-place.sh"
+cat > "${RELEASE_DIR}/README.md" <<'EOF'
+# MythOS __VERSION__ in-place update
+
+This bundle upgrades an existing installed MythOS system without repartitioning,
+formatting, or touching /home. It creates a Snapper pre-release snapshot when
+available, preserves existing Debian configuration files, and runs versioned
+MythOS state migrations after the package transaction.
+
+Verify and install:
+
+```bash
+sha256sum --check SHA256SUMS
+sudo ./install-mythos-in-place.sh
+```
+
+The installer refuses package removals. If the system cannot create a Btrfs
+snapshot, it stops unless the administrator explicitly chooses
+`--allow-without-snapshot` after ensuring an independent backup exists.
+EOF
+sed -i "s/__VERSION__/${VERSION}/g" "${RELEASE_DIR}/README.md"
+(cd "${RELEASE_DIR}" && sha256sum * > SHA256SUMS)
+tar --create --gzip --file "${ARTIFACT_DIR}/${RELEASE_NAME}.tar.gz" -C "${ARTIFACT_DIR}" "${RELEASE_NAME}"
+printf 'In-place release bundle: %s\n' "${RELEASE_DIR}"
+printf 'Release archive: %s\n' "${ARTIFACT_DIR}/${RELEASE_NAME}.tar.gz"

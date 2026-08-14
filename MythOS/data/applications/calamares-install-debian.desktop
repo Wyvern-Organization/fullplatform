@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Install MythOS
+GenericName=System Installer
+Comment=Install MythOS on this computer
+Exec=calamares-install-debian
+TryExec=calamares-install-debian
+Icon=org.mythos.Welcome
+Terminal=false
+Categories=Qt;System;
+Keywords=install;installer;calamares;system;
+StartupNotify=true

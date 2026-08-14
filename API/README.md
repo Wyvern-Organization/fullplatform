@@ -22,6 +22,7 @@ those non-Logfare requests.
 The public gateway has lightweight per-client limits per Worker edge instance:
 
 - Laguna XS: 30 requests/minute
+- Mini (Preview): unlimited on its normal streaming CPU path; Fast Mode uses a separate GPU fair-use bucket (5 RPM / 30 RPH / 100 RPD for guests; 10 RPM / 100 RPH / 300 RPD for keyed accounts)
 - Laguna S and any other model: 15 requests/minute
 - All models combined: 300 requests/hour and 1,000 requests/day
 

@@ -1,0 +1,16 @@
+[Unit]
+Description=Initialize MythOS protection and snapshot services
+Documentation=man:mythosctl(1)
+ConditionPathExists=!/run/live/medium
+ConditionPathExists=!/var/lib/mythos/initialized
+After=local-fs.target NetworkManager.service
+Before=graphical.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/mythosctl initialize
+RemainAfterExit=yes
+TimeoutStartSec=5min
+
+[Install]
+WantedBy=multi-user.target

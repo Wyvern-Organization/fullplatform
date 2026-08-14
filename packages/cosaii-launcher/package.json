@@ -1,0 +1,16 @@
+{
+  "name": "cosaii",
+  "version": "0.1.0",
+  "description": "Thin launcher for the Cosaii local agent",
+  "license": "GPL-3.0-or-later",
+  "bin": { "cosaii": "launcher.cjs" },
+  "files": ["launcher.cjs", "README.md"],
+  "optionalDependencies": {
+    "@osaii/cosaii-darwin-arm64": "0.1.0",
+    "@osaii/cosaii-darwin-x64": "0.1.0",
+    "@osaii/cosaii-linux-arm64": "0.1.0",
+    "@osaii/cosaii-linux-x64": "0.1.0",
+    "@osaii/cosaii-win32-arm64": "0.1.0",
+    "@osaii/cosaii-win32-x64": "0.1.0"
+  }
+}

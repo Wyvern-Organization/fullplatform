@@ -1,0 +1,13 @@
+PRETTY_NAME="MythOS 1.0"
+NAME="MythOS"
+VERSION_ID="1.0"
+VERSION="1.0 (Trixie)"
+VERSION_CODENAME=trixie
+ID=mythos
+ID_LIKE=debian
+DEBIAN_CODENAME=trixie
+HOME_URL="https://www.debian.org/"
+SUPPORT_URL="https://www.debian.org/support"
+BUG_REPORT_URL="https://www.debian.org/Bugs/"
+PRIVACY_POLICY_URL=""
+

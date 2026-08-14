@@ -1,0 +1,6 @@
+mythos (1.0.0) trixie; urgency=medium
+
+  * Initial MythOS v1 system package.
+
+ -- MythOS Build Team <build@mythos.invalid>  Fri, 07 Aug 2026 00:00:00 -0500
+

@@ -39,6 +39,7 @@ import {
   apiCorsHeaders,
   poolsideModelRequest,
   rateLimitModel,
+  rateLimitFastMode,
   poolsideModels,
   rateLimit,
   withRateLimitHeaders,
@@ -72,10 +73,36 @@ import {
   createApiKeySecret,
   hashApiKey,
 } from "./lib/api-keys";
-import { platformPage } from "../API/platform";
-import { cliPage } from "../API/cli";
+import { platformPage, productsPage } from "../API/platform";
+import {
+  cosaiiApi,
+  cosaiiAuthorizePage,
+  cosaiiDeviceApi,
+} from "../API/cosaii";
+import {
+  cosaiiPowerShellInstaller,
+  cosaiiShellInstaller,
+} from "../API/cosaii-install";
 import { docsPage } from "../API/docs";
+import { MYTHOS_RELEASE, mythosPage } from "../API/mythos";
 import { getSemanticCache, putSemanticCache } from "./lib/semantic-cache";
+import {
+  masqueAdminPage,
+  masqueManifest,
+  masquePage,
+  masqueSharePage,
+  masqueEmbedPage,
+  masqueServiceWorker,
+} from "../API/masque";
+import {
+  masqueApi,
+  masqueApiError,
+  runScheduledMasqueTasks,
+} from "../API/masque-api";
+export { MasqueSession } from "./masque-session";
+import type { MasqueSession } from "./masque-session";
+export { CosaiiRelay } from "./cosaii-relay";
+import type { CosaiiRelay } from "./cosaii-relay";
 import osaiiIcon from "../osaii.png";
 
 interface Env {
@@ -86,6 +113,12 @@ interface Env {
   GROQ_API_KEY?: string;
   POLLINATIONS_API_KEY?: string;
   STUDIO_FILES: R2Bucket;
+  BROWSER?: import("@cloudflare/puppeteer").BrowserWorker;
+  AI?: Ai;
+  MASQUE_SEARCH?: VectorizeIndex;
+  MASQUE_SESSIONS: DurableObjectNamespace<MasqueSession>;
+  COSAII_RELAYS: DurableObjectNamespace<CosaiiRelay>;
+  MASQUE_ADMIN_EMAILS?: string;
 }
 
 const JSON_HEADERS = {
@@ -132,8 +165,79 @@ export default {
           region: request.cf?.colo ?? "unknown",
         });
 
+      if (method === "GET" && url.pathname === "/install/cosaii.sh")
+        return new Response(cosaiiShellInstaller(), {
+          headers: {
+            "content-type": "text/x-shellscript; charset=utf-8",
+            "content-disposition": "inline; filename=cosaii.sh",
+            "cache-control": "no-store",
+          },
+        });
+      if (method === "GET" && url.pathname === "/install/cosaii.ps1")
+        return new Response(cosaiiPowerShellInstaller(), {
+          headers: {
+            "content-type": "text/plain; charset=utf-8",
+            "content-disposition": "inline; filename=cosaii.ps1",
+            "cache-control": "no-store",
+          },
+        });
+      const cosaiiAsset = url.pathname.match(
+        /^\/install\/(cosaii-(?:linux|macos)-(?:x64|arm64)\.tar\.gz|cosaii-windows-(?:x64|arm64)\.zip)(\.sha256)?$/,
+      );
+      if (method === "GET" && cosaiiAsset) {
+        const asset = `${cosaiiAsset[1]}${cosaiiAsset[2] ?? ""}`;
+        const object = await env.STUDIO_FILES.get(`cosaii/releases/latest/${asset}`);
+        if (!object)
+          return json(
+            { error: "cosaii_release_unavailable", message: "This Cosaii package has not been published yet." },
+            503,
+          );
+        return new Response(object.body, {
+          headers: {
+            "content-type": cosaiiAsset[2]
+              ? "text/plain; charset=utf-8"
+              : cosaiiAsset[1].endsWith(".zip")
+                ? "application/zip"
+                : "application/gzip",
+            "content-disposition": `attachment; filename=${asset}`,
+            // The route is deliberately named `latest`; caching it can leave
+            // `cosaii update` installing the previous paired binaries.
+            "cache-control": "no-store",
+            "x-content-type-options": "nosniff",
+          },
+        });
+      }
+
       if (url.pathname === "/api/ask" && method === "GET")
         return askEndpoint(request, env, ctx, url);
+
+      if (url.pathname.startsWith("/masque/api/v1/")) {
+        try {
+          return await masqueApi(
+            request,
+            env,
+            url.pathname.slice("/masque/api/v1/".length),
+            ctx,
+          );
+        } catch (error) {
+          return masqueApiError(error);
+        }
+      }
+
+      if (url.pathname.startsWith("/platform/api/cli/"))
+        return cosaiiDeviceApi(
+          request,
+          env,
+          url.pathname.slice("/platform/api/cli".length),
+        );
+
+      if (url.pathname.startsWith("/cosaii/api/v1/"))
+        return cosaiiApi(
+          request,
+          env,
+          url.pathname.slice("/cosaii/api/v1".length),
+          ctx,
+        );
 
       if (url.pathname.startsWith("/platform/api/"))
         return platformKeys(
@@ -149,7 +253,8 @@ export default {
         if (apiAccountId) await trackApiRequest(env.DB, apiAccountId, request);
         else await trackAnonymousRequest(env.DB, request);
         const model = await rateLimitModel(request);
-        const limited = rateLimit(request, model, apiAccountId);
+        const fastMode = await rateLimitFastMode(request);
+        const limited = rateLimit(request, model, apiAccountId, fastMode);
         if (limited) return limited;
         if (method === "GET" && url.pathname === "/api/v1/models")
           return withRateLimitHeaders(
@@ -157,6 +262,7 @@ export default {
             request,
             model,
             apiAccountId,
+            fastMode,
           );
         if (method === "POST") {
           const response = await poolsideModelRequest(
@@ -178,6 +284,7 @@ export default {
             request,
             model,
             apiAccountId,
+            fastMode,
           );
         }
         return withRateLimitHeaders(
@@ -242,6 +349,47 @@ export default {
       if (shared && method === "GET") return sharedStudioItem(env, shared[1]);
 
       if (method === "GET") {
+        const masqueShare = url.pathname.match(/^\/masque\/share\/([A-Za-z0-9_-]{20,64})$/);
+        if (masqueShare)
+          return html(masqueSharePage(masqueShare[1]), {
+            "content-type": "text/html; charset=utf-8",
+            "cache-control": "no-store",
+            "x-frame-options": "DENY",
+          });
+        const masqueEmbed = url.pathname.match(/^\/masque\/embed\/([A-Za-z0-9_-]{20,64})$/);
+        if (masqueEmbed)
+          return html(masqueEmbedPage(masqueEmbed[1]), {
+            "content-type": "text/html; charset=utf-8",
+            "cache-control": "no-store",
+            "content-security-policy": "default-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; frame-ancestors *",
+          });
+        if (url.pathname === "/masque/manifest.webmanifest")
+          return new Response(masqueManifest(), {
+            headers: {
+              "content-type": "application/manifest+json; charset=utf-8",
+              "cache-control": "public, max-age=3600",
+            },
+          });
+        if (url.pathname === "/masque/sw.js")
+          return new Response(masqueServiceWorker(), {
+            headers: {
+              "content-type": "text/javascript; charset=utf-8",
+              "cache-control": "no-cache",
+              "service-worker-allowed": "/masque",
+            },
+          });
+        if (url.pathname === "/masque/admin")
+          return html(masqueAdminPage(), {
+            "content-type": "text/html; charset=utf-8",
+            "cache-control": "no-store",
+            "permissions-policy": "camera=(), microphone=(), geolocation=()",
+          });
+        if (url.pathname === "/masque")
+          return html(masquePage(), {
+            "content-type": "text/html; charset=utf-8",
+            "cache-control": "no-store",
+            "permissions-policy": "camera=(), microphone=(self), geolocation=()",
+          });
         if (url.pathname === "/studio/oauth/callback")
           return html(oauthCallbackPage(), {
             "content-type": "text/html; charset=utf-8",
@@ -269,10 +417,19 @@ export default {
             "permissions-policy":
               "camera=(self), microphone=(self), display-capture=(self), geolocation=()",
           });
-        if (url.pathname === "/cli")
-          return html(cliPage(), {
+        if (url.pathname === "/platform/cli/authorize")
+          return cosaiiAuthorizePage(request, env.DB);
+        if (url.pathname === "/mythos/release.json")
+          return new Response(JSON.stringify(MYTHOS_RELEASE), {
+            headers: {
+              ...JSON_HEADERS,
+              "cache-control": "public, max-age=300, stale-while-revalidate=3600",
+            },
+          });
+        if (url.pathname === "/mythos")
+          return html(mythosPage(), {
             "content-type": "text/html; charset=utf-8",
-            "cache-control": "no-store",
+            "cache-control": "public, max-age=300, stale-while-revalidate=1800",
           });
         if (url.pathname === "/docs") {
           const docs = docsPage()
@@ -281,14 +438,32 @@ export default {
             .replaceAll("OSS Studio developer docs", "The OSAII Platform · developer docs")
             .replaceAll("One OpenAI-compatible gateway for Poolside models, Logfare Advanced models, and the focused OSS Studio workspace.", "The Platform connects a separate OpenAI-compatible API with the focused OSS Studio workspace. They share model access, accounts, safety, and usage.")
             .replaceAll("<h2>OSS Studio</h2><p class=\"section-intro\">", "<h2>Studio: the hands-on side of the Platform</h2><p class=\"section-intro\">")
+            .replaceAll('<a href="#studio">Studio workspaces</a>', '<a href="#studio">Studio workspaces</a><a href="#mythos">MythOS</a>')
             .replaceAll("OSS Studio · <a href=\"/\">Platform</a> · <a href=\"/studio/new\">Studio</a> · <a href=\"/api/v1/models\">Models</a>", "OSAII Platform · <a href=\"/api/v1/models\">API</a> · <a href=\"/studio/new\">Studio</a> · <a href=\"/api/v1/models\">Models</a>")
-            .replaceAll("q:'Answer using only the OSS Studio docs. Question: '+q", "q:'Answer only from the OSAII Platform docs below. Never invent URLs, endpoints, model IDs, or capabilities. If the docs do not contain the answer, say so. Known routes: /, /docs, /api/ask, /api/v1/chat/completions, /api/v1/responses, /api/v1/models, /studio/new. Question: '+q")
-            .replaceAll("answer.textContent=text", "answer.textContent=text.replace(/https?:\\/\\/[^\\s)]+/g,url=>{try{const u=new URL(url);const allowed=u.hostname==='osaii.wyvernhub.net'&&['/','/docs','/api/ask','/api/v1/chat/completions','/api/v1/responses','/api/v1/models','/studio/new'].includes(u.pathname);return allowed?url:'[unverified link omitted]'}catch{return '[unverified link omitted]'}})");
-          return html(docs, {
+            .replaceAll("q:'Answer using only the OSS Studio docs. Question: '+q", "q:'Answer only from the OSAII Platform docs below. Never invent URLs, endpoints, model IDs, or capabilities. If the docs do not contain the answer, say so. Known routes: /, /docs, /api/ask, /api/v1/chat/completions, /api/v1/responses, /api/v1/models, /studio/new, /masque, /masque/api/v1, /mythos, /mythos/release.json. Question: '+q")
+            .replaceAll("answer.textContent=text", "answer.textContent=text.replace(/https?:\\/\\/[^\\s)]+/g,url=>{try{const u=new URL(url);const allowed=u.hostname==='osaii.wyvernhub.net'&&['/','/docs','/api/ask','/api/v1/chat/completions','/api/v1/responses','/api/v1/models','/studio/new','/masque','/masque/api/v1','/mythos','/mythos/release.json'].includes(u.pathname);return allowed?url:'[unverified link omitted]'}catch{return '[unverified link omitted]'}})");
+          const mythosDocs = docs.replace(
+            "</main>",
+            `<section id="mythos"><h2>MythOS desktop integration</h2><p class="section-intro">MythOS is a separate desktop operating-system product. It works without an OSAII account or OSAII applications.</p><div class="cards"><div class="card"><strong>Opt-in shortcuts</strong><p>The optional <code>osaii-web-apps</code> System Hub feature adds browser shortcuts for Platform, Studio, and Masque. They are absent by default and removable.</p></div><div class="card"><strong>Separate identity</strong><p>Local users, files, administrator credentials, and diagnostics never become Platform account data. Browser sign-in is explicit.</p></div><div class="card"><strong>Service discovery</strong><p><code>GET /mythos/release.json</code> publishes version, channel, architecture, base, and canonical service routes.</p></div><div class="card"><strong>Release boundary</strong><p>Build validation does not imply broad hardware acceptance. The preview currently targets amd64 PC and Intel Mac boot paths.</p></div></div><p><a href="/mythos">Explore MythOS</a> · <a href="/mythos/release.json">Release metadata</a></p></section></main>`,
+          );
+          const masqueDocs = mythosDocs.replace(
+            "</main>",
+            `<section id="masque"><h2>Masque character platform</h2><p class="section-intro">Masque is a separate 18+ character product that shares OSAII Platform accounts, model infrastructure, safety, usage, and API keys with Studio and the API.</p><div class="code"><code>GET /masque/api/v1/characters?q=detective<br>POST /masque/api/v1/sessions<br>POST /masque/api/v1/sessions/{session_id}/messages</code></div><p>Masque exposes Auto, Fast, and Smart—not the general OpenAI-compatible model catalog. Public API keys use explicit <code>masque:read</code>, <code>masque:chat</code>, <code>masque:write</code>, <code>masque:embed</code>, and <code>masque:webhook</code> scopes. Existing keys begin with no Masque privileges.</p><p>Character resources include revisions, collaborators, remixes, imports, exports, personas, memory, rooms, social actions, reports, embeds, notifications, and aggregate webhooks. Message responses use SSE events named <code>start</code>, <code>delta</code>, <code>finish</code>, and <code>error</code>, with session, message, branch, revision, selected family, finish reason, and usage fields.</p><p><a href="/masque">Open Masque</a> · <a href="/masque/admin">Operator console</a></p></section></main>`,
+          );
+          const cosaiiDocs = masqueDocs.replace(
+            "</main>",
+            `<section id="cosaii"><h2>Cosaii local agent</h2><p class="section-intro">Cosaii (pronounced cozy) is the Platform's local agentic CLI. A persistent Rust <code>cosaii-app-server</code> owns sessions, tools, permissions, encrypted local persistence, and remote attachment; the OpenTUI client only renders state and sends actions.</p><div class="cards"><div class="card"><strong>Install</strong><p><code>curl -fsSL https://osaii.wyvernhub.net/install/cosaii.sh | sh</code><br>PowerShell: <code>irm https://osaii.wyvernhub.net/install/cosaii.ps1 | iex</code></p></div><div class="card"><strong>Browser login</strong><p>Run <code>cosaii login</code>. The CLI opens the normal Platform authorization page and polls a ten-minute device grant; no localhost callback is opened.</p></div><div class="card"><strong>Local sessions</strong><p>Threads, turns, items, search indexes, snapshots, and audit records stay in the app-server's encrypted SQLite store and are not synchronized into Studio transcripts.</p></div><div class="card"><strong>Permissions</strong><p>Deny All, Allow Low-Risk, Always Ask, and Full Access can be set globally or per canonical workspace. Full Access retains ask rules for destructive and sensitive actions.</p></div></div><pre>cosaii                         # open the TUI\ncosaii run "fix the failing tests" --format jsonl\ncosaii session list\ncosaii daemon status\ncosaii remote enable</pre><p>The versioned JSON-RPC protocol begins with <code>initialize</code> and supports thread, turn, item, account, permission, filesystem, command, MCP, skills, Platform, and remote-control methods. Local transport is WebSocket-framed RPC over a user-only Unix socket or Windows named pipe; embedding uses JSON-RPC over stdio.</p><p>Cloud endpoints are scoped under <code>/platform/api/cli/*</code> and <code>/cosaii/api/v1/*</code>. These require CLI bearer tokens and are not additions to the public OpenAI model list. The encrypted relay transports opaque ciphertext only.</p></section></main>`,
+          );
+          return html(cosaiiDocs, {
             "content-type": "text/html; charset=utf-8",
             "cache-control": "public, max-age=300, stale-while-revalidate=1800",
           });
         }
+        if (url.pathname === "/products")
+          return html(productsPage(), {
+            "content-type": "text/html; charset=utf-8",
+            "cache-control": "public, max-age=300, stale-while-revalidate=1800",
+          });
         if (
           url.pathname === "/studio" ||
           url.pathname.startsWith("/studio/site/")
@@ -305,6 +480,7 @@ export default {
             .replaceAll("OSAII gives builders one OpenAI-compatible endpoint, clear model access, and a workspace for work that needs more than a chat box.", "OSAII Platform brings together the API and OSS Studio. They share models, accounts, safety, and usage while staying separate so you can call AI from code or work directly in a focused workspace.")
             .replaceAll('href="/studio">Open Studio', 'href="/studio/new">Open Studio')
             .replaceAll('href="/studio">Studio', 'href="/studio/new">Studio')
+            .replaceAll('<a href="/catalog">Certified models</a>', '<a href="/products">Products</a><a href="/docs">Docs</a>')
             .replaceAll("<b>One endpoint</b><span>OpenAI-compatible chat and responses</span>", "<b>One platform</b><span>Shared models, accounts, safety, and usage</span>")
             .replaceAll("<b>Your key</b><span>Named, revocable credentials per account</span>", "<b>Two surfaces</b><span>API for code · Studio for focused work</span>")
             .replaceAll("<b>Open standard</b><span>Certification and platform, side by side</span>", "<b>Open standard</b><span>Build once, move between both</span>")
@@ -429,7 +605,10 @@ export default {
     env: Env,
     ctx: ExecutionContext,
   ): Promise<void> {
-    await runScheduledStudioTasks(env, ctx);
+    await Promise.all([
+      runScheduledStudioTasks(env, ctx),
+      runScheduledMasqueTasks(env, ctx),
+    ]);
   },
 };
 
@@ -482,6 +661,7 @@ async function askEndpoint(
   const aliases: Record<string, string> = {
     fast: "poolside/laguna-xs-2.1",
     smart: "poolside/laguna-s-2.1",
+    mini: "microsoft/bitnet-b1.58-2B-4T",
   };
   const requestedModel = url.searchParams.get("model")?.trim() || "fast";
   const model = aliases[requestedModel.toLowerCase()] || requestedModel;
@@ -855,6 +1035,7 @@ function toApiSubmission(s: {
   audit_notes: string;
   created_at: string;
   audited_at: string | null;
+  labels: string;
 }) {
   const labels = parseLabels(s.labels);
   return {
@@ -912,7 +1093,7 @@ async function platformKeys(
   if (path === "/keys" && request.method === "GET") {
     const keys = await db
       .prepare(
-        "SELECT id,name,prefix,created_at,last_used_at FROM api_keys WHERE account_id=? AND revoked_at IS NULL ORDER BY created_at DESC",
+        "SELECT id,name,prefix,scopes,created_at,last_used_at FROM api_keys WHERE account_id=? AND revoked_at IS NULL ORDER BY created_at DESC",
       )
       .bind(account.id)
       .all();

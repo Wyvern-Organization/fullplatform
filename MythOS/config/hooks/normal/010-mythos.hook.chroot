@@ -1,0 +1,34 @@
+#!/bin/sh
+set -eu
+
+flatpak remote-add --system --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
+update-mime-database /usr/share/mime
+update-desktop-database /usr/share/applications
+gtk-update-icon-cache -f /usr/share/icons/hicolor
+dconf update
+
+ufw default deny incoming
+ufw default allow outgoing
+ufw --force enable
+
+systemctl enable NetworkManager.service
+systemctl enable gdm.service
+systemctl enable cups.socket
+systemctl enable bluetooth.service
+systemctl enable ufw.service
+systemctl enable apparmor.service
+systemctl enable mythos-offline-update.service
+systemctl enable mythos-initialize.service
+systemctl enable mythos-boot-health.service
+systemctl enable snapper-cleanup.timer
+systemctl enable snapper-timeline.timer
+
+systemctl disable ssh.service 2>/dev/null || true
+systemctl disable snapd.service 2>/dev/null || true
+
+chmod 0755 /etc/grub.d/42_mythos_recovery
+mkdir -p /var/lib/mythos
+chmod 0700 /var/lib/mythos
+rm -f /etc/machine-id
+touch /etc/machine-id
+

@@ -1,0 +1,19 @@
+#!/bin/sh
+set -e
+
+if [ ! -d /recovery/live ]; then
+    exit 0
+fi
+
+recovery_uuid="$(grub-probe --target=fs_uuid /recovery 2>/dev/null || true)"
+if [ -z "${recovery_uuid}" ]; then
+    exit 0
+fi
+
+printf '%s\n' \
+    "menuentry 'MythOS Recovery' --class mythos --class gnu-linux {" \
+    "    search --no-floppy --fs-uuid --set=recovery ${recovery_uuid}" \
+    "    set root=(\$recovery)" \
+    "    linux /live/vmlinuz boot=live components live-media-path=/live username=consumer hostname=recovery quiet splash mythos.recovery=1" \
+    "    initrd /live/initrd.img" \
+    "}"

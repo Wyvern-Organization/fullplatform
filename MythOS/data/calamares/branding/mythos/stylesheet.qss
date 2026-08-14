@@ -1,0 +1,30 @@
+QWidget {
+    font-family: "Manrope", "Noto Sans", sans-serif;
+    background: #10131c;
+    color: #eef3ff;
+}
+QPushButton {
+    min-height: 34px;
+    padding: 4px 16px;
+    border-radius: 9px;
+    background: #20283a;
+    border: 1px solid #394765;
+    color: #eef3ff;
+}
+QPushButton:default {
+    background: #5475f6;
+    color: #FFFFFF;
+}
+QPushButton:hover {
+    background: #2c3851;
+}
+QComboBox, QLineEdit {
+    background: #171d2b;
+    border: 1px solid #394765;
+    border-radius: 8px;
+    padding: 5px;
+}
+#sidebarApp {
+    background: #0b0e17;
+    color: #eef3ff;
+}

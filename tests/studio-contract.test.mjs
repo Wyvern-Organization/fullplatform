@@ -9,15 +9,17 @@ const studioPlatform = await readFile(new URL("../API/studio-platform.ts", impor
 const platformMigration = await readFile(new URL("../migrations/0008_studio_platform.sql", import.meta.url), "utf8");
 const wrangler = await readFile(new URL("../wrangler.jsonc", import.meta.url), "utf8");
 const poolside = await readFile(new URL("../API/poolside.ts", import.meta.url), "utf8");
+const bitnet = await readFile(new URL("../API/bitnet.ts", import.meta.url), "utf8");
 const worker = await readFile(new URL("../src/index.ts", import.meta.url), "utf8");
 const pages = await readFile(new URL("../src/lib/pages.ts", import.meta.url), "utf8");
 const chatgpt = await readFile(new URL("../API/chatgpt.ts", import.meta.url), "utf8");
 const tokenUsage = await readFile(new URL("../src/lib/token-usage.ts", import.meta.url), "utf8");
 const tokenMigration = await readFile(new URL("../migrations/0006_token_usage.sql", import.meta.url), "utf8");
 const platform = await readFile(new URL("../API/platform.ts", import.meta.url), "utf8");
-const cli = await readFile(new URL("../API/cli.ts", import.meta.url), "utf8");
+const cosaii = await readFile(new URL("../API/cosaii.ts", import.meta.url), "utf8");
 const apiKeys = await readFile(new URL("../src/lib/api-keys.ts", import.meta.url), "utf8");
 const docs = await readFile(new URL("../API/docs.ts", import.meta.url), "utf8");
+const mythos = await readFile(new URL("../API/mythos.ts", import.meta.url), "utf8");
 const keyMigration = await readFile(new URL("../migrations/0007_api_keys.sql", import.meta.url), "utf8");
 const favicon = await readFile(new URL("../osaii.png", import.meta.url));
 
@@ -75,6 +77,18 @@ test("OSAII Platform clearly connects separate API and Studio surfaces", () => {
   assert.match(platform, /OpenAI-compatible/);
 });
 
+test("Products catalog keeps optional products off the focused Platform front page", () => {
+  assert.match(worker, /url\.pathname === "\/products"/);
+  assert.match(platform, /function productsPage\(\)/);
+  assert.match(platform, /Install Cosaii/);
+  assert.match(platform, /\/install\/cosaii\.sh/);
+  assert.match(platform, /Open Masque/);
+  assert.match(platform, /Explore MythOS/);
+  assert.match(worker, /href="\/products">Products/);
+  assert.doesNotMatch(worker, /<section class="section" id="mythos">/);
+  assert.doesNotMatch(worker, /<section class="section" id="masque">/);
+});
+
 test("Ask about docs uses a bounded route map and removes unverified links", () => {
   assert.match(worker, /Never invent URLs, endpoints, model IDs, or capabilities/);
   assert.match(worker, /unverified link omitted/);
@@ -88,20 +102,16 @@ test("Platform API-key CTAs use a reliable modal handler", () => {
   assert.match(worker, /b\.onclick=openModal/);
 });
 
-test("OSAII Code provides an interactive terminal-style coding workspace", () => {
+test("Cosaii replaces the browser coding mock with app-server interfaces", () => {
   for (const expected of [
-    'url.pathname === "/cli"',
-    "cliPage()",
-    "New session",
-    "Workspace",
-    "API key & settings",
-    "sessionStorage",
-    "@ for a file",
-    "text/event-stream",
-    "getReader()",
-    "Ctrl ↵",
-    "Do not claim to run tools or edit files.",
-  ]) assert.match(cli + worker, new RegExp(expected.replace(/[.*+?^${}()|[\\]\\]/g, "\\$&")));
+    "/platform/api/cli/",
+    "/platform/cli/authorize",
+    "/cosaii/api/v1/",
+    "cosaiiDeviceApi",
+    "cosaiiAuthorizePage",
+    "COSAII_RELAYS",
+  ]) assert.match(cosaii + worker, new RegExp(expected.replace(/[.*+?^${}()|[\\]\\]/g, "\\$&")));
+  assert.doesNotMatch(worker, /url\.pathname === "\/cli"/);
 });
 
 test("Studio chat streams through the Studio gateway with accurate reasoning controls", () => {
@@ -197,6 +207,44 @@ test("Studio chat streams through the Studio gateway with accurate reasoning con
   assert.doesNotMatch(app, /document\.querySelector\('#speed'\)\.textContent=/);
 });
 
+test("Mini Preview recreates the BitNet demo CPU and GPU transports", () => {
+  for (const expected of [
+    'microsoft/bitnet-b1.58-2B-4T',
+    'https://demo-bitnet-h0h8hcfqeqhrf5gf.canadacentral-01.azurewebsites.net',
+    '"user-agent": "BitNetClient/1.0"',
+    'device: "cpu"',
+    'device: "gpu"',
+    '/gpuresult/',
+    'setTimeout(resolve, 2_000)',
+    'text/event-stream; charset=utf-8',
+    'bitnet_gpu_streaming_unsupported',
+    'upstream BitNet demo',
+  ]) assert.ok(bitnet.includes(expected), `missing BitNet transport contract: ${expected}`);
+  for (const expected of [
+    'name: "Mini (Preview)"',
+    'STUDIO_IDENTITY_PROMPT',
+    'Open-Source AI Initiative',
+    'value="mini">Mini (Preview)',
+    'id="miniFastMode"',
+    'id="miniFastControl" hidden',
+    'toggleAttribute(\'hidden\',!active)',
+    "family.value==='mini'||(state.tier==='advanced'&&state.advanced===miniModelId)",
+    'Fast Mode uses the demo GPU path and disables streaming',
+    'fast_mode:state.miniFastMode',
+    'MINI · BitNet Preview',
+  ]) assert.ok((studio + app).includes(expected), `missing Mini Studio contract: ${expected}`);
+  assert.doesNotMatch(app, /id="fastMode"/i);
+  assert.match(app, /const miniModelId=/);
+  assert.match(poolside, /model === BITNET_MODEL_ID/);
+  assert.match(poolside, /BITNET_FAST_RATE_LIMIT_PER_MINUTE = 5/);
+  assert.match(poolside, /model === BITNET_MODEL_ID && !fastMode/);
+  assert.match(poolside, /rateLimitFastMode/);
+  assert.match(studio, /STUDIO_MINI_FAST_LIMITS/);
+  assert.match(studio, /Mini Fast Mode has a separate GPU fair-use limit/);
+  assert.match(worker, /mini: "microsoft\/bitnet-b1\.58-2B-4T"/);
+  assert.match(docs, /fast_mode:true/);
+});
+
 test("Chat and sidebar own independent scroll regions without anchor jumps", () => {
   assert.match(app, /html,body\{height:100%;overflow:hidden\}/);
   assert.match(app, /\.side\{height:100dvh;overflow:hidden\}/);
@@ -238,6 +286,21 @@ test("Developer docs use the OSS Studio visual system and document the public AP
     "higher limits",
     "id=\"docsAsk\"",
   ]) assert.ok(docs.includes(expected) || worker.includes(expected), `missing docs contract: ${expected}`);
+});
+
+test("MythOS is a separate product with opt-in OSAII integration", () => {
+  for (const expected of [
+    'url.pathname === "/mythos"',
+    'url.pathname === "/mythos/release.json"',
+    "mythosPage()",
+    "MYTHOS_RELEASE",
+    "A computer,",
+    "optional add-on",
+    "absent by default",
+    "local login",
+    "osaii-web-apps",
+  ]) assert.ok(worker.includes(expected) || mythos.includes(expected), `missing MythOS contract: ${expected}`);
+  assert.doesNotMatch(mythos, /class="button primary" href="\/studio\/new"/);
 });
 
 test("advanced models are server-enforced and only revealed after access check", () => {
@@ -371,7 +434,13 @@ test("Swarm screens the task once and the final synthesis once", () => {
   assert.ok(poolside.includes("finalOutputSafety(content, hasToolCalls, env)"));
 });
 
-test("safety screening uses the ordered Groq fallback chain", () => {
+test("safety screening uses Poolside remotely with the ordered Groq fallback chain", () => {
+  assert.match(poolside, /const POOLSIDE_SAFETY_MODEL = 'poolside\/laguna-xs-2\.1'/);
+  assert.match(poolside, /async function poolsideSafetyCheck/);
+  assert.match(poolside, /reasoning_effort: 'minimal'/);
+  assert.match(poolside, /provider: 'poolside'/);
+  assert.match(poolside, /const poolside = await poolsideSafetyCheck\(body, env, false\)/);
+  assert.match(poolside, /if \(!poolside\.unavailable\) return poolside/);
   assert.match(poolside, /GROQ_SAFETY_MODELS = \[/);
   for (const model of ["openai/gpt-oss-20b", "openai/gpt-oss-safeguard-20b", "llama-guard-3-8b", "meta-llama/llama-prompt-guard-2-86m"]) {
     assert.match(poolside, new RegExp(model.replace(/[.*+?^${}()|[\\]\\]/g, "\\\\$&")));
@@ -459,6 +528,19 @@ test("the rebuilt standard Studio surface is isolated at /studio/new", () => {
     "Auto",
   ]) assert.match(worker + studioNext + app, new RegExp(expected.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   assert.match(worker, /url\.pathname === "\/studio"/);
+});
+
+test("Studio new uses a compact, account-aware time greeting", () => {
+  for (const expected of ["studio-new-greeting", "studioGreeting", "Good morning.", "greetingPeriod", "data.account?.display_name"])
+    assert.ok(studioNext.includes(expected), `missing ${expected}`);
+  assert.match(studioNext, /\.replace\([\s\S]*What would you like to <em>figure out\?<\/em>[\s\S]*studio-new-greeting/);
+  assert.match(app, /What would you like to <em>figure out\?<\/em>/);
+});
+
+test("Studio new keeps Fast Mode Mini-only", () => {
+  assert.match(studioNext, /miniFastControl/);
+  assert.match(studioNext, /microsoft\/bitnet-b1\.58-2B-4T/);
+  assert.match(studioNext, /cached script can never expose Fast Mode/);
 });
 
 test("Studio platform state is durable, searchable, controllable, and project-grounded", () => {

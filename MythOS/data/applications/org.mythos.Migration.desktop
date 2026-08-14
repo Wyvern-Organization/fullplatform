@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=Move from Windows
+Comment=Copy personal files and supported settings from Windows
+Exec=mythos-migrate
+Icon=org.mythos.Migration
+Terminal=false
+Type=Application
+Categories=Utility;
+Keywords=Windows;Migration;Import;Files;Bookmarks;Steam;
+StartupNotify=true

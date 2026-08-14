@@ -1,0 +1,55 @@
+#!/bin/sh
+
+PREREQ=""
+prereqs() {
+    echo "${PREREQ}"
+}
+case "${1:-}" in
+    prereqs)
+        prereqs
+        exit 0
+        ;;
+esac
+
+. /scripts/functions
+
+rollback_mount=/run/mythos-rollback
+mkdir -p "${rollback_mount}"
+if ! mount -t btrfs -o rw,subvolid=5 "${ROOT}" "${rollback_mount}"; then
+    log_warning_msg "MythOS could not inspect the rollback request."
+    exit 0
+fi
+
+request="${rollback_mount}/@state/rollback-request"
+complete="${rollback_mount}/@state/rollback-complete"
+if [ ! -f "${request}" ]; then
+    umount "${rollback_mount}"
+    exit 0
+fi
+
+snapshot="$(sed -n 's/^snapshot=\([0-9][0-9]*\)$/\1/p' "${request}" | head -n 1)"
+transaction="$(sed -n 's/^transaction=\([a-zA-Z0-9-][a-zA-Z0-9-]*\)$/\1/p' "${request}" | head -n 1)"
+source="${rollback_mount}/@snapshots/${snapshot}/snapshot"
+current="${rollback_mount}/@"
+failed="${rollback_mount}/@failed-${transaction}"
+
+if [ -z "${snapshot}" ] || [ -z "${transaction}" ] || [ ! -d "${source}" ] || [ ! -d "${current}" ] || [ -e "${failed}" ]; then
+    log_warning_msg "MythOS rejected an invalid rollback request."
+    umount "${rollback_mount}"
+    exit 0
+fi
+
+log_begin_msg "Restoring the previous MythOS system"
+if mv "${current}" "${failed}"; then
+    if btrfs subvolume snapshot "${source}" "${current}" >/dev/null; then
+        mv "${request}" "${complete}"
+        sync
+        log_end_msg 0
+    else
+        mv "${failed}" "${current}"
+        log_end_msg 1
+    fi
+else
+    log_end_msg 1
+fi
+umount "${rollback_mount}"

@@ -1,0 +1,46 @@
+.TH MYTHOSCTL 1 "2026-08-07" "MythOS 1.0" "MythOS commands"
+.SH NAME
+mythosctl \- inspect and control MythOS services
+.SH SYNOPSIS
+.B mythosctl
+.RI [ --compact ]
+.I command
+.RI [ options ]
+.SH DESCRIPTION
+.B mythosctl
+is the validated JSON control interface used by MythOS System Hub. Read-only
+commands report system, hardware, update, compatibility, feature, snapshot, and
+recovery state. Mutating commands require administrator authorization.
+.SH COMMANDS
+.TP
+.B status
+Report system readiness, protection, storage, desktop, and update state.
+.TP
+.B hardware
+Report graphics, Wi-Fi, Bluetooth, audio, camera, controller, and printing support.
+.TP
+.B update
+Check, stage, apply, cancel, inspect, or select a stable/current update channel.
+.TP
+.B drivers
+Recommend and install repository drivers; activate GenericWifi or
+GenericNetworking recovery services; or inspect and apply firmware updates.
+.TP
+.B snapshots
+List, create, and select Btrfs system restore points.
+.TP
+.B recovery
+Run diagnostics or explicit repair operations.
+.TP
+.B feature
+List, enable, or disable optional MythOS capability profiles.
+.TP
+.B compatibility
+Look up or search the local application compatibility database.
+.SH SECURITY
+Use System Hub for normal operation. Privileged commands validate their actions
+and targets but can change the installed operating system.
+.SH SEE ALSO
+.BR systemd.offline-updates (7),
+.BR snapper (8),
+.BR flatpak (1)

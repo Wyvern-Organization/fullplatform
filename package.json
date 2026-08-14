@@ -3,15 +3,28 @@
   "private": true,
   "license": "GPL-3.0-only",
   "type": "module",
+  "workspaces": ["packages/cosaii", "packages/cosaii-launcher"],
+  "scripts": {
+    "test": "node --test tests/*.test.mjs",
+    "typecheck": "tsc",
+    "build": "wrangler deploy --dry-run",
+    "cosaii:check": "cargo check --workspace --manifest-path cosaii/Cargo.toml && npm run typecheck -w @osaii/cosaii-client",
+    "cosaii:build": "cargo build --release --manifest-path cosaii/Cargo.toml && npm run build -w @osaii/cosaii-client"
+  },
   "dependencies": {
+    "@cloudflare/ai-chat": "^0.10.1",
     "@cloudflare/puppeteer": "latest",
     "@openai-oauth/ai-sdk": "2.0.0",
     "@openai-oauth/web": "2.0.0",
-    "ai": "6.0.116"
+    "agents": "^0.20.1",
+    "ai": "6.0.116",
+    "fflate": "^0.8.3",
+    "web-push": "^3.6.7"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "latest",
+    "@types/web-push": "^3.6.4",
+    "bun": "^1.3.14",
     "typescript": "latest",
-    "wrangler": "4.118.0"
+    "wrangler": "^4.120.1"
   }
 }

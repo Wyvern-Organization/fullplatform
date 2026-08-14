@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>org.mythos.Migration</id>
+  <name>Move from Windows</name>
+  <summary>Copy personal files and supported settings without overwriting</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>LicenseRef-proprietary</project_license>
+  <description>
+    <p>Moves documents, desktop files, pictures, videos, music, supported browser bookmarks, wallpapers, fonts, and Steam library metadata into a MythOS account.</p>
+  </description>
+  <url type="homepage">https://mythos.invalid/</url>
+  <developer id="org.mythos"><name>MythOS Build Team</name></developer>
+  <content_rating type="oars-1.1"/>
+  <launchable type="desktop-id">org.mythos.Migration.desktop</launchable>
+  <releases><release version="1.0.0" date="2026-08-07"/></releases>
+</component>

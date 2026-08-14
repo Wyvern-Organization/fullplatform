@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
+BUILD_ROOT="${PROJECT_ROOT}/.build"
+ARTIFACT_DIR="${BUILD_ROOT}/artifacts"
+BUILDER_IMAGE="${MYTHOS_BUILDER_IMAGE:-mythos-builder:trixie-v1}"
+
+mkdir -p "${ARTIFACT_DIR}"
+docker build --pull=false --tag "${BUILDER_IMAGE}" --file "${PROJECT_ROOT}/build/Dockerfile" "${PROJECT_ROOT}"
+
+docker run --rm \
+    --env "HOST_UID=$(id -u)" \
+    --env "HOST_GID=$(id -g)" \
+    --volume "${PROJECT_ROOT}:/src:ro" \
+    --volume "${ARTIFACT_DIR}:/artifacts" \
+    "${BUILDER_IMAGE}" \
+    bash -euc '
+        package_work="$(mktemp -d)"
+        rsync -a --exclude=.build --exclude=.git /src/ "${package_work}/source/"
+        cd "${package_work}/source"
+        dpkg-buildpackage --unsigned-source --unsigned-changes --build=binary
+        install -m 0644 "${package_work}"/mythos-core_*_all.deb /artifacts/
+        install -m 0644 "${package_work}"/mythos_*_amd64.buildinfo /artifacts/ 2>/dev/null || true
+        chown -R "${HOST_UID}:${HOST_GID}" /artifacts
+    '
+
+printf 'Package artifacts: %s\n' "${ARTIFACT_DIR}"
+

@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
+BUILD_ROOT="${PROJECT_ROOT}/.build"
+
+if [[ "${BUILD_ROOT}" != "${PROJECT_ROOT}/.build" || ! -d "${BUILD_ROOT}" ]]; then
+    printf 'Nothing to clean.\n'
+    exit 0
+fi
+
+docker run --rm --volume "${BUILD_ROOT}:/work" alpine:3.20 sh -c 'find /work -mindepth 1 -delete'
+rmdir "${BUILD_ROOT}" 2>/dev/null || true
+printf 'Removed MythOS build artifacts and working files.\n'
+
