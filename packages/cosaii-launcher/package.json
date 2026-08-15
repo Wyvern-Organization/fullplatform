@@ -2,7 +2,7 @@
   "name": "cosaii",
   "version": "0.1.0",
   "description": "Thin launcher for the Cosaii local agent",
-  "license": "GPL-3.0-or-later",
+  "license": "GPL-3.0-only",
   "bin": { "cosaii": "launcher.cjs" },
   "files": ["launcher.cjs", "README.md"],
   "optionalDependencies": {

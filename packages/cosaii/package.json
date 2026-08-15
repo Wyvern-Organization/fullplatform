@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "description": "Cozy agentic terminal client for the OSAII Platform",
-  "license": "GPL-3.0-or-later",
+  "license": "GPL-3.0-only",
   "type": "module",
   "bin": { "cosaii": "dist/cosaii" },
   "files": ["dist", "README.md"],

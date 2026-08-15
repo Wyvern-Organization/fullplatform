@@ -85,6 +85,14 @@ npx wrangler deploy --dry-run --config wrangler.jsonc
 npx wrangler deploy --config wrangler.jsonc
 ```
 
+## Open source boundary
+
+The only open parts of the OSAII Platform are **OSS Studio** and **Cosaii**. They are
+published under GPLv3 in the public [`openplatform`](https://github.com/osai-initiative/openplatform)
+repository. Everything else in this repository — the model gateway surface, Masque, MythOS,
+the docs site, and the certified catalog — is closed and lives only in this private
+`fullplatform` repository.
+
 ## License
 
 Licensed under the [GNU General Public License v3.0](LICENSE).
