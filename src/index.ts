@@ -51,6 +51,7 @@ import {
   studioNewPage,
   studioServiceWorker,
 } from "../API/studio-next";
+import { studioT3Page } from "../API/studio-t3";
 import {
   runScheduledStudioTasks,
   sharedStudioItem,
@@ -412,6 +413,13 @@ export default {
           });
         if (url.pathname === "/studio/new")
           return html(studioNewPage(), {
+            "content-type": "text/html; charset=utf-8",
+            "cache-control": "no-store",
+            "permissions-policy":
+              "camera=(self), microphone=(self), display-capture=(self), geolocation=()",
+          });
+        if (url.pathname === "/studio/preview/a")
+          return html(studioT3Page(), {
             "content-type": "text/html; charset=utf-8",
             "cache-control": "no-store",
             "permissions-policy":

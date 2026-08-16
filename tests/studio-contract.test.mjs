@@ -5,6 +5,7 @@ import { readFile } from "node:fs/promises";
 const studio = await readFile(new URL("../API/studio.ts", import.meta.url), "utf8");
 const app = await readFile(new URL("../API/app.ts", import.meta.url), "utf8");
 const studioNext = await readFile(new URL("../API/studio-next.ts", import.meta.url), "utf8");
+const studioT3 = await readFile(new URL("../API/studio-t3.ts", import.meta.url), "utf8");
 const studioPlatform = await readFile(new URL("../API/studio-platform.ts", import.meta.url), "utf8");
 const platformMigration = await readFile(new URL("../migrations/0008_studio_platform.sql", import.meta.url), "utf8");
 const wrangler = await readFile(new URL("../wrangler.jsonc", import.meta.url), "utf8");
@@ -606,4 +607,30 @@ test("cloud work persists with scheduling, managed agents, notifications, and su
     "serviceWorker.register",
     "control_url",
   ]) assert.match(studioPlatform + studioNext + worker + wrangler, new RegExp(expected.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+});
+
+test("T3-forked OSS Studio preview is a routed three-panel agent surface", () => {
+  for (const expected of [
+    'url.pathname === "/studio/preview/a"',
+    "studioT3Page()",
+    "grid-template-columns:232px 248px 1fr",
+    "rail-list",
+    "thread-list",
+    "id=\"planToggle\"",
+    "Approve &amp; execute",
+    "dock-terminal",
+    "dock-diff",
+    "diffLines",
+    "id=\"permissions\"",
+    "Reasoning: Light",
+    "selectedModel()",
+    "surface:'agent'",
+    "toolAliases",
+    "unknown_tool",
+    "Launching 300 fast researchers",
+    "Publish",
+    "Allow low-risk",
+  ]) assert.ok((worker + studioT3).includes(expected), `missing T3 preview contract: ${expected}`);
+  assert.match(worker, /url\.pathname === "\/studio\/new"/);
+  assert.match(studioT3, /Enter to send · Shift \+ Enter/);
 });
