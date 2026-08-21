@@ -77,17 +77,27 @@ class Welcome(Adw.Application):
     def _install_css(self) -> None:
         provider = Gtk.CssProvider()
         provider.load_from_data(
-            b"""
+            """
+            /* -- MythOS Welcome -- design-system consistency -- */
             window { background-color: #080b13; color: #eaf1ff; }
             headerbar { min-height: 52px; background-color: alpha(#0d1220, 0.96); border-bottom: 1px solid alpha(#dce7ff, 0.10); }
             .welcome-content { margin: 36px 54px 48px 54px; }
-            .welcome-title { font-family: Manrope, sans-serif; font-weight: 800; font-size: 36pt; letter-spacing: -0.7px; color: #f7f9ff; }
-            .welcome-copy { font-size: 13pt; color: alpha(#dce7ff, 0.70); }
+            .welcome-title { font-family: 'Manrope', Cantarell, sans-serif; font-weight: 800; font-size: 36pt; letter-spacing: -0.7px; color: #f7f9ff; }
+            .welcome-copy { font-size: 13pt; line-height: 1.6; color: alpha(#dce7ff, 0.70); }
             .horizon-band { min-height: 6px; margin-top: 8px; border-radius: 999px; background-image: linear-gradient(to right, #7587ff, #6ae7ff 52%, #d86cff); box-shadow: 0 0 18px alpha(#6ae7ff, 0.30); }
-            .choice-card { padding: 12px; border-radius: 20px; background-color: alpha(#111827, 0.72); border: 1px solid alpha(#dce7ff, 0.10); }
-            button { border-radius: 999px; min-height: 32px; padding: 0 14px; }
-            .suggested-action { background-color: #667cff; color: #ffffff; }
-            """
+            .choice-card { padding: 14px; border-radius: 18px; background-color: alpha(#111827, 0.72); border: 1px solid alpha(#dce7ff, 0.10); transition: border-color 150ms ease, background-color 150ms ease; }
+            .choice-card:hover { border-color: alpha(#6ae7ff, 0.22); background-color: alpha(#111827, 0.84); }
+            .choice-card:focus-within { outline: 2px solid #6ae7ff; outline-offset: 2px; }
+            button { border-radius: 999px; min-height: 32px; padding: 0 14px; font-family: 'Manrope', sans-serif; font-weight: 600; transition: background-color 150ms ease, border-color 150ms ease, transform 150ms ease; }
+            button:hover { transform: translateY(-1px); }
+            button:active { transform: scale(0.97); }
+            button:focus-visible { outline: 2px solid #6ae7ff; outline-offset: 2px; }
+            .suggested-action { background-color: #667cff; color: #ffffff; box-shadow: 0 2px 12px alpha(#667cff, 0.32); }
+            .suggested-action:hover { background-color: #7587ff; }
+            .skeleton { background-color: alpha(#dce7ff, 0.06); border-radius: 8px; min-height: 12px; }
+            /* Respect reduced motion */
+            * { transition-timing-function: cubic-bezier(0.2, 0.8, 0.2, 1); }
+            """.encode("utf-8")
         )
         display = Gdk.Display.get_default()
         if display:

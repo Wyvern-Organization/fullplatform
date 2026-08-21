@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  push:
+    branches: ["main", "master"]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install deps
+        run: npm ci
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Contract tests
+        run: npm test
+      - name: Wrangler dry-run
+        run: npx wrangler deploy --dry-run --config wrangler.jsonc
+      - name: Cosaii check (if cargo present)
+        run: npm run cosaii:check
+      - name: MythOS compile check
+        run: |
+          python3 -m compileall -q MythOS/src MythOS/tests
+          echo "mythos compile done"
+      - name: MythOS pytest
+        run: |
+          python3 -m pip install -q pytest
+          PYTHONPATH=MythOS/src python3 -m pytest MythOS/tests -q
+          echo "mythos pytest done"
+      - name: MythOS validate-project
+        run: |
+          python3 MythOS/scripts/validate-project
+          echo "mythos validate-project done"
+      - name: MythOS make quick (fast validate, no Docker)
+        run: |
+          make -C MythOS quick
+          echo "mythos quick done"
+      - name: MythOS install script lint
+        run: |
+          bash -n MythOS/install.sh && echo "install.sh syntax ok"
+          make -C MythOS help >/dev/null && echo "make help ok"
+      - name: MythOS worker route check
+        run: |
+          npx tsc --noEmit
+          echo "mythos worker routes compile ok"

@@ -24,7 +24,8 @@ class UnixWebSocket extends EventEmitter {
       socket.on("close",()=>this.emit("close"))
     })
   }
-  send(text:string):void { this.socket?.write(frame(Buffer.from(text),1)) }
+   send(text:string):void { this.socket?.write(frame(Buffer.from(text),1)) }
+  ping():void { if(this.socket&&!this.socket.destroyed){this.socket.write(frame(Buffer.alloc(0),9))} }
   close():void { if(this.socket&&!this.socket.destroyed){this.socket.write(frame(Buffer.alloc(0),8));this.socket.end()} }
   private parseFrames():void {
     while(this.buffer.length>=2){const first=this.buffer[0],second=this.buffer[1];let offset=2,length=second&0x7f;if(length===126){if(this.buffer.length<4)return;length=this.buffer.readUInt16BE(2);offset=4}else if(length===127){if(this.buffer.length<10)return;const value=this.buffer.readBigUInt64BE(2);if(value>BigInt(Number.MAX_SAFE_INTEGER))throw new Error("WebSocket frame is too large");length=Number(value);offset=10}const masked=Boolean(second&0x80);if(masked)offset+=4;if(this.buffer.length<offset+length)return;let payload=this.buffer.subarray(offset,offset+length);if(masked){const mask=this.buffer.subarray(offset-4,offset);payload=Buffer.from(payload.map((byte,i)=>byte^mask[i%4]))}this.buffer=this.buffer.subarray(offset+length);const opcode=first&0x0f;if(opcode===1)this.emit("message",payload.toString());else if(opcode===8){this.socket?.end();return}else if(opcode===9)this.socket?.write(frame(payload,10))}
@@ -46,12 +47,23 @@ export class RpcClient extends EventEmitter {
   private ws?: UnixWebSocket
   private nextId = 1
   private pending = new Map<number, { resolve(value:any):void; reject(error:Error):void }>()
+  private heartbeat?: ReturnType<typeof setInterval>
+  private reconnectAttempts = 0
 
-  async connect(socketPath: string): Promise<void> {
+  async connect(socketPath: string, attempt = 0): Promise<void> {
     const ws=new UnixWebSocket();this.ws=ws
     ws.on("message",raw=>this.onMessage(raw))
-    ws.on("close",()=>this.emit("disconnect"))
-    await ws.connect(socketPath)
+    ws.on("close",()=>{this.emit("disconnect"); this.stopHeartbeat()})
+    try {
+      await ws.connect(socketPath)
+    } catch (error) {
+      if (attempt < 3) {
+        const delay = Math.min(200 * Math.pow(2, attempt), 2000)
+        await Bun.sleep(delay)
+        return this.connect(socketPath, attempt+1)
+      }
+      throw error
+    }
     await this.call("initialize", {
       protocol_version: 1,
       client_name: "cosaii",
@@ -60,6 +72,27 @@ export class RpcClient extends EventEmitter {
       notifications: ["thread/*", "turn/*", "item/*", "account/*", "fs/*"],
     })
     this.notify("initialized", {})
+    this.startHeartbeat()
+    this.reconnectAttempts = 0
+  }
+
+  private startHeartbeat():void {
+    this.stopHeartbeat()
+    // heartbeat ping every 25s, plus application-level health probe every 30s is handled by caller
+    this.heartbeat = setInterval(()=>{ try{ (this.ws as any)?.ping?.() } catch{} }, 25_000)
+    // Don't block process exit
+    ;(this.heartbeat as any)?.unref?.()
+  }
+  private stopHeartbeat():void { if(this.heartbeat){ clearInterval(this.heartbeat); this.heartbeat=undefined } }
+
+  /** Reconnect with exponential backoff (used by TUI if needed) */
+  async reconnect(socketPath: string): Promise<void> {
+    this.close()
+    let delay = 200
+    for (let i=0; i<5; i++) {
+      try { await this.connect(socketPath); return } catch { await Bun.sleep(delay); delay = Math.min(delay*2, 2000) }
+    }
+    throw new Error("Could not reconnect to cosaii-app-server (try cosaii daemon restart)")
   }
 
   call<T=any>(method: string, params: unknown = {}): Promise<T> {
@@ -70,7 +103,7 @@ export class RpcClient extends EventEmitter {
   }
   notify(method: string, params: unknown = {}): void { this.ws?.send(JSON.stringify({ jsonrpc: "2.0", method, params })) }
   respond(id:RpcId, result:unknown):void { this.ws?.send(JSON.stringify({jsonrpc:"2.0",id,result})) }
-  close(): void { this.ws?.close() }
+  close(): void { this.stopHeartbeat(); this.ws?.close(); for(const [,p] of this.pending) p.reject(new Error("Cosaii app-server disconnected")); this.pending.clear() }
   private onMessage(raw: string): void {
     let message: RpcResponse | RpcNotification
     try { message = JSON.parse(raw) } catch { return }

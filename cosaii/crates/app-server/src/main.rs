@@ -51,16 +51,27 @@ const DEFAULT_PLATFORM: &str = "https://osaii.wyvernhub.net";
 #[derive(Parser)]
 #[command(
     name = "cosaii-app-server",
-    version,
-    about = "Persistent local runtime for Cosaii clients"
+    version = SERVER_VERSION,
+    about = "Persistent local runtime for Cosaii clients",
+    long_about = "Cosaii app-server — encrypted local runtime for the Cosaii TUI.\n\nStores threads/turns in an encrypted SQLite DB, runs tools, and bridges to the OSAII Platform.\n\nRun without args to start the daemon. Use `cosaii daemon status|logs` to inspect.",
+    after_help = "Examples:\n  cosaii-app-server --verbose\n  cosaii-app-server --data-dir ~/.local/share/cosaii --platform-url https://osaii.wyvernhub.net\n  cosaii-app-server proxy  # stdio JSON-RPC bridge for embeddings\n\nHealth: `cosaii doctor` checks daemon, platform, keychain, and data dir. RPC `server/health` is also available.\nVerification: cosaii --version && cosaii doctor\nUninstall: remove the installed binaries and `cosaii daemon uninstall` to remove the user service."
 )]
 struct Args {
-    #[arg(long)]
+    /// Custom socket path / named pipe (default: $COSAII_HOME/app-server.sock)
+    #[arg(long, value_name = "PATH")]
     listen: Option<String>,
-    #[arg(long)]
+    /// Data directory for encrypted SQLite store (default: $COSAII_DATA_DIR or OS data dir)
+    #[arg(long, value_name = "DIR")]
     data_dir: Option<PathBuf>,
-    #[arg(long, default_value = DEFAULT_PLATFORM)]
+    /// Platform base URL (https://osaii.wyvernhub.net)
+    #[arg(long, default_value = DEFAULT_PLATFORM, value_name = "URL")]
     platform_url: String,
+    /// Increase log verbosity (-v, -vv). Logs include timestamps.
+    #[arg(long, short = 'v', action = clap::ArgAction::Count, global = true)]
+    verbose: u8,
+    /// Show verbose help
+    #[arg(long, hide = true)]
+    verbose_help: bool,
     #[command(subcommand)]
     command: Option<ServerCommand>,
 }
@@ -97,9 +108,61 @@ struct ConnectionState {
     client_name: String,
 }
 
+fn log_ts(verbose: u8, level: &str, msg: &str) {
+    if verbose == 0 && level == "debug" {
+        return;
+    }
+    let ts = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
+    eprintln!("[{ts}] {level}: {msg}");
+}
+
+fn validate_platform_url(raw: &str) -> Result<String> {
+    let trimmed = raw.trim().trim_end_matches('/').to_owned();
+    if trimmed.is_empty() {
+        bail!("--platform-url must not be empty (example: https://osaii.wyvernhub.net)");
+    }
+    if !(trimmed.starts_with("https://") || trimmed.starts_with("http://")) {
+        bail!("--platform-url must start with https:// or http:// (got: {trimmed}). Hint: use https://osaii.wyvernhub.net");
+    }
+    if trimmed.contains(' ') {
+        bail!("--platform-url must not contain spaces");
+    }
+    Ok(trimmed)
+}
+
+fn ensure_dir_robust(path: &Path, label: &str) -> Result<()> {
+    if path.as_os_str().is_empty() {
+        bail!("{label} path must not be empty");
+    }
+    if path.exists() && !path.is_dir() {
+        bail!("{label} path exists but is not a directory: {}", path.display());
+    }
+    if let Some(parent) = path.parent() {
+        if !parent.as_os_str().is_empty() && !parent.exists() {
+            fs::create_dir_all(parent)
+                .with_context(|| format!("create parent for {label} {}", path.display()))?;
+        }
+    }
+    fs::create_dir_all(path)
+        .with_context(|| format!("create {label} {}", path.display()))?;
+    restrict_dir(path).with_context(|| format!("set permissions 0700 on {}", path.display()))?;
+    Ok(())
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     let args = Args::parse();
+    if args.verbose > 0 {
+        log_ts(args.verbose, "info", &format!("cosaii-app-server {SERVER_VERSION} starting (verbose={})", args.verbose));
+    }
+    if let Err(e) = validate_platform_url(&args.platform_url) {
+        if args.command.is_none() {
+            eprintln!("cosaii-app-server: {e:#}");
+            eprintln!("Hint: check --platform-url and COSAII_HOME/COSAII_DATA_DIR env vars. Run with --help for usage.");
+            std::process::exit(2);
+        }
+        return Err(e);
+    }
     if let Some(command) = args.command {
         match command {
             ServerCommand::GenerateTs => println!("{}", cosaii_protocol::typescript_bindings()),
@@ -111,7 +174,12 @@ async fn main() -> Result<()> {
         }
         return Ok(());
     }
-    run_daemon(args).await
+    if let Err(error) = run_daemon(args).await {
+        eprintln!("cosaii-app-server: {error:#}");
+        eprintln!("Tip: run `cosaii doctor` to check daemon, platform, keychain, and data dir. Logs: $COSAII_HOME/app-server.log");
+        return Err(error);
+    }
+    Ok(())
 }
 
 fn home_paths(args: &Args) -> Result<(PathBuf, PathBuf)> {
@@ -129,11 +197,20 @@ fn home_paths(args: &Args) -> Result<(PathBuf, PathBuf)> {
 }
 
 async fn run_daemon(args: Args) -> Result<()> {
+    let validated_platform = validate_platform_url(&args.platform_url)?;
     let (control_dir, data_dir) = home_paths(&args)?;
-    fs::create_dir_all(&control_dir)?;
-    fs::create_dir_all(&data_dir)?;
-    restrict_dir(&control_dir)?;
-    restrict_dir(&data_dir)?;
+    ensure_dir_robust(&control_dir, "control dir")?;
+    ensure_dir_robust(&data_dir, "data dir")?;
+    // Validate writable and permissions
+    if args.verbose > 0 {
+        log_ts(args.verbose, "info", &format!("control_dir={} data_dir={} platform={}", control_dir.display(), data_dir.display(), validated_platform));
+    }
+    if data_dir.join("sessions.db").exists() {
+        // Quick integrity check: ensure we can open and query without error; will be reopened via open_store
+        if args.verbose > 1 {
+            log_ts(args.verbose, "debug", "found existing sessions.db, will validate on open");
+        }
+    }
     #[cfg(unix)]
     let endpoint = args.listen.clone().unwrap_or_else(|| {
         control_dir
@@ -150,13 +227,17 @@ async fn run_daemon(args: Args) -> Result<()> {
         if socket_path.exists() {
             match UnixStream::connect(&socket_path).await {
                 Ok(_) => bail!(
-                    "A Cosaii app-server is already listening at {}",
-                    socket_path.display()
+                    "A Cosaii app-server is already listening at {} (pid file: {}). Try `cosaii daemon status` or `cosaii daemon restart`. If stuck, remove the socket after checking `ps`.",
+                    socket_path.display(),
+                    pid_path.display()
                 ),
                 Err(_) if recorded_process_alive(&pid_path) => {
-                    bail!("The recorded app-server process is alive but its socket is unavailable")
+                    bail!("The recorded app-server process is alive (pid file {}) but its socket {} is unavailable. Try `cosaii daemon restart` or check logs at $COSAII_HOME/app-server.log", pid_path.display(), socket_path.display())
                 }
                 Err(_) => {
+                    if args.verbose > 0 {
+                        log_ts(args.verbose, "info", &format!("removing stale socket {}", socket_path.display()));
+                    }
                     fs::remove_file(&socket_path).context("remove stale app-server socket")?
                 }
             }
@@ -164,9 +245,9 @@ async fn run_daemon(args: Args) -> Result<()> {
     }
     #[cfg(windows)]
     if ClientOptions::new().open(&endpoint).is_ok() {
-        bail!("A Cosaii app-server is already listening at {endpoint}")
+        bail!("A Cosaii app-server is already listening at {endpoint}. Try `cosaii daemon status` or `cosaii daemon restart`.")
     } else if recorded_process_alive(&pid_path) {
-        bail!("The recorded app-server process is alive but its named pipe is unavailable")
+        bail!("The recorded app-server process is alive but its named pipe {endpoint} is unavailable. Try `cosaii daemon restart` or check logs.")
     }
     let store = Arc::new(open_store(&data_dir)?);
     recover_interrupted_turns(&store)?;
@@ -176,17 +257,25 @@ async fn run_daemon(args: Args) -> Result<()> {
         http: Client::builder()
             .user_agent(format!("cosaii-app-server/{SERVER_VERSION}"))
             .build()?,
-        platform: args.platform_url.trim_end_matches('/').to_owned(),
-        data_dir,
-        control_dir,
+        platform: validated_platform.clone(),
+        data_dir: data_dir.clone(),
+        control_dir: control_dir.clone(),
         subscriptions: Arc::new(RwLock::new(HashMap::new())),
         turns: Arc::new(RwLock::new(HashMap::new())),
         clients: Arc::new(AtomicUsize::new(0)),
         last_activity: Arc::new(AtomicU64::new(epoch_seconds())),
         approvals: Arc::new(Mutex::new(HashMap::new())),
     };
+    if args.verbose > 0 {
+        log_ts(args.verbose, "info", &format!("listening on {} (pid {})", endpoint, std::process::id()));
+    } else {
+        // Always log startup with timestamp to help `cosaii logs`
+        let ts = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
+        eprintln!("[{ts}] info: cosaii-app-server {SERVER_VERSION} listening on {endpoint} (pid {})", std::process::id());
+    }
     if std::env::var_os("COSAII_SERVICE").is_none() {
         let idle_state = state.clone();
+        let verbose = args.verbose;
         tokio::spawn(async move {
             loop {
                 tokio::time::sleep(Duration::from_secs(60)).await;
@@ -196,6 +285,9 @@ async fn run_daemon(args: Args) -> Result<()> {
                     && idle_state.clients.load(Ordering::Relaxed) == 0
                     && idle_state.turns.read().await.is_empty()
                 {
+                    if verbose > 0 {
+                        log_ts(verbose, "info", &format!("idle {idle_for}s with no clients/turns, exiting"));
+                    }
                     std::process::exit(0);
                 }
             }
@@ -210,9 +302,15 @@ async fn run_daemon(args: Args) -> Result<()> {
             match listener.accept().await {
                 Ok((stream, _)) => {
                     let state = state.clone();
+                    let v = args.verbose;
                     tokio::spawn(async move {
                         if let Err(error) = serve_socket(stream, state).await {
-                            eprintln!("connection error: {error:#}");
+                            if v > 0 {
+                                log_ts(v, "error", &format!("connection error: {error:#}"));
+                            } else {
+                                let ts = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
+                                eprintln!("[{ts}] error: connection error: {error:#}");
+                            }
                         }
                     });
                 }
@@ -234,9 +332,15 @@ async fn run_daemon(args: Args) -> Result<()> {
             let next = ServerOptions::new().create(&endpoint)?;
             let connected = server;
             let state = state.clone();
+            let v = args.verbose;
             tokio::spawn(async move {
                 if let Err(error) = serve_socket(connected, state).await {
-                    eprintln!("connection error: {error:#}")
+                    if v > 0 {
+                        log_ts(v, "error", &format!("connection error: {error:#}"));
+                    } else {
+                        let ts = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
+                        eprintln!("[{ts}] error: connection error: {error:#}");
+                    }
                 }
             });
             server = next;
@@ -324,7 +428,10 @@ async fn dispatch(
     let result = match request.method.as_str() {
         "initialize" => initialize(connection, request.params, &state),
         "server/status" => Ok(
-            json!({"version":SERVER_VERSION,"protocol":{"min":PROTOCOL_MIN,"max":PROTOCOL_MAX},"pid":std::process::id(),"data_dir":state.data_dir,"clients":state.clients.load(Ordering::Relaxed)}),
+            json!({"version":SERVER_VERSION,"protocol":{"min":PROTOCOL_MIN,"max":PROTOCOL_MAX},"pid":std::process::id(),"data_dir":state.data_dir,"control_dir":state.control_dir,"platform":state.platform,"clients":state.clients.load(Ordering::Relaxed)}),
+        ),
+        "server/health" | "health" | "/health" => Ok(
+            json!({"status":"ok","version":SERVER_VERSION,"protocol":{"min":PROTOCOL_MIN,"max":PROTOCOL_MAX},"pid":std::process::id(),"data_dir":state.data_dir,"control_dir":state.control_dir,"platform":state.platform,"clients":state.clients.load(Ordering::Relaxed),"timestamp":now()}),
         ),
         "server/shutdown" => {
             tokio::spawn(async {

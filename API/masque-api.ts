@@ -7,6 +7,25 @@ import { accountForApiKey, hashApiKey } from "../src/lib/api-keys";
 import { generalSafetyCheck, poolsideModelRequest, type PoolsideEnv } from "./poolside";
 import type { MasqueSession } from "../src/masque-session";
 
+/**
+ * Masque API — hosted at /masque/api/v1/* and locally via `npm run dev` (http://localhost:8787).
+ *
+ * Single-line usage:
+ *   curl https://osaii.wyvernhub.net/masque/api/v1/characters?q=detective -H "Authorization: Bearer $OSAII_API_KEY"
+ *   curl -X POST https://osaii.wyvernhub.net/masque/api/v1/sessions -H "Content-Type: application/json" -d '{"character_ids":["..."]}' 
+ *   curl -N https://osaii.wyvernhub.net/masque/api/v1/sessions/{id}/events -H "Accept: text/event-stream"
+ *
+ * Health & limits:
+ *   GET /health -> {status:"ok"} (worker heartbeat)
+ *   GET /masque/api/v1/bootstrap -> flags, limits, guest_messages_daily, smart allowances
+ *   All responses include CORS and JSON errors with `message` + `docs: "/docs#masque"`. Rate limits surface as 429 with Retry-After
+ *   and `offer_fast` hint when Smart is congested (see /docs#masque and /docs#health).
+ *
+ * SSE robustness: events are `start` → `delta` → `finish`|`error`, with `retry: 1500` and `:` comments for keepalive.
+ *   Clients should handle `last-event-id`, reconnect on network drop, and ignore `:` comments.
+ */
+
+
 export interface MasqueEnv extends PoolsideEnv {
   DB: D1Database;
   STUDIO_FILES: R2Bucket;
@@ -454,7 +473,14 @@ async function sessionRoute(request: Request, env: MasqueEnv, identity: Identity
   }
   if (tail === "events" && request.method === "GET") {
     const after = new URL(request.url).searchParams.get("after") || request.headers.get("last-event-id") || "0";
-    return stub.fetch(new Request(`https://internal/masque-session/events?after=${encodeURIComponent(after)}`));
+    const upstream = await stub.fetch(new Request(`https://internal/masque-session/events?after=${encodeURIComponent(after)}`));
+    // SSE robustness: ensure retry field and keepalive comments are preserved, add CORS
+    const headers = new Headers(upstream.headers);
+    if(!headers.get("content-type")?.includes("text/event-stream")) headers.set("content-type","text/event-stream; charset=utf-8");
+    headers.set("cache-control","no-store, no-transform");
+    headers.set("x-accel-buffering","no");
+    // If upstream already includes retry, keep; otherwise client will use default 1500ms
+    return new Response(upstream.body, { status: upstream.status, headers });
   }
   if (tail === "messages" && request.method === "POST") {
     if (session.member_role === "viewer") return apiJson({ error: "viewer_cannot_send" }, 403);
@@ -1278,7 +1304,7 @@ async function masqueLimit(db: D1Database, identity: Identity, surface: string, 
       : db.prepare("SELECT COUNT(*) count FROM masque_usage WHERE guest_hash=? AND surface=? AND created_at>=datetime('now','-1 day')").bind(identity.guestHash, surface).first<{ count: number }>(),
   ]);
   const config = safeObject(flag?.config), limit = identity.accountId ? (family === "smart" && !profile?.contribution_opt_in ? Number(config.smart_daily || 100) : 20_000) : Number(config.guest_daily || 20);
-  if (Number(usage?.count || 0) >= limit) return { response: apiJson({ error: "usage_limit", limit, family, offer_fast: family === "smart", message: family === "smart" ? "Smart is at today’s allowance. Choose Fast for this turn or review data contribution settings." : "Today’s guest messages are used. Sign in to continue." }, 429), usageId: null };
+  if (Number(usage?.count || 0) >= limit) return { response: apiJson({ error: "usage_limit", limit, family, offer_fast: family === "smart", message: family === "smart" ? "Smart is at today’s allowance (see /docs#masque and GET /health). Choose Fast for this turn or review data contribution settings." : "Today’s guest messages are used (20/day). Sign in to continue — see /docs#masque." }, 429), usageId: null };
   const inserted = await db.prepare("INSERT INTO masque_usage(account_id,guest_hash,surface,model_family,completed) VALUES(?,?,?,?,0)").bind(identity.accountId, identity.guestHash, surface, family).run();
   return { response: null, usageId: Number(inserted.meta.last_row_id || 0) || null };
 }
@@ -1421,13 +1447,22 @@ function base64(bytes: Uint8Array): string { let binary = ""; for (let offset = 
 async function sha256(value: Uint8Array): Promise<string> { const bytes = new Uint8Array(value); return [...new Uint8Array(await crypto.subtle.digest("SHA-256", bytes.buffer))].map((byte) => byte.toString(16).padStart(2, "0")).join(""); }
 function download(body: BodyInit, filename: string, contentType: string): Response { return new Response(body, { headers: { "content-type": contentType, "content-disposition": `attachment; filename="${filename}"`, "cache-control": "private, no-store" } }); }
 function cors(): Record<string, string> { return { "access-control-allow-origin": "*", "access-control-allow-methods": "GET,POST,PATCH,DELETE,OPTIONS", "access-control-allow-headers": "authorization,content-type,x-masque-device,last-event-id", "access-control-expose-headers": "content-type,content-disposition", "access-control-max-age": "86400" }; }
-function apiJson(value: unknown, status = 200): Response { return new Response(JSON.stringify(value), { status, headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store", ...cors() } }); }
+function apiJson(value: unknown, status = 200, extra?: Record<string,string>): Response { return new Response(JSON.stringify(value), { status, headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store", ...cors(), ...(extra||{}) } }); }
 function safetyResponse(safety: { message: string; unavailable?: boolean; reason?: string }): Response { return apiJson({ error: safety.unavailable ? "safety_filter_unavailable" : "content_policy_violation", message: safety.message, reason: safety.reason }, safety.unavailable ? 503 : 400); }
 
 class HttpError extends Error { constructor(readonly status: number, message: string) { super(message); } }
 
 export function masqueApiError(error: unknown): Response {
-  if (error instanceof HttpError) return apiJson({ error: error.message }, error.status);
+  if (error instanceof HttpError) {
+    const docs = "/docs#masque";
+    const status = error.status;
+    // Helpful messages with docs/health hints for rate limits, scopes, flags
+    const hint = status === 429 ? " See /docs#health for Retry-After and /docs#masque for limits." 
+      : status === 403 && error.message.includes("missing_scope") ? " Grant via Platform API key modal (scopes) or /masque/api/v1/keys/{id}/scopes. Docs: /docs#masque."
+      : status === 503 && error.message.includes("feature_disabled") ? " Feature flagged off. Check GET /masque/api/v1/bootstrap or /health."
+      : " See /docs#masque and /health.";
+    return apiJson({ error: error.message, docs, message: error.message + hint }, status);
+  }
   console.error(error);
-  return apiJson({ error: "internal_error", message: error instanceof Error ? error.message : "Unexpected Masque error." }, 500);
+  return apiJson({ error: "internal_error", docs: "/docs#masque", message: error instanceof Error ? error.message : "Unexpected Masque error. See /docs#masque and /health." }, 500);
 }

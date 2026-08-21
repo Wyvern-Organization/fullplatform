@@ -98,9 +98,60 @@ advanced repositories and NAS workflows.
   the corresponding fixed MythOS control command. `mythosctl` is not a Polkit
   executable target.
 
+## Single-line install
+
+From any Debian/Ubuntu host (or WSL2 Debian):
+
+```bash
+curl -fsSL https://osaii.wyvernhub.net/install/mythos.sh | bash
+# preview first:
+curl -fsSL https://osaii.wyvernhub.net/install/mythos.sh | bash -s -- --dry-run
+# local checkout:
+bash MythOS/install.sh --dry-run && bash MythOS/install.sh
+bash MythOS/install.sh --iso   # also build package + ISO guidance (needs Docker + 25 GiB tmp)
+```
+
+The installer detects Debian/Ubuntu, installs build deps via `apt` (when `sudo` is
+available), clones or updates the `openplatform` repo, and runs a fast validate.
+Windows users should use WSL2: `wsl --install -d Debian` then run the curl
+command inside WSL.
+
 ## Build products
+
+| Command | Output | Needs |
+| --- | --- | --- |
+| `make quick` | fast validate (compile + pytest + `validate-project`) | `python3 ≥3.11`, `pytest` |
+| `make validate` | full validation (adds `shellcheck`) | `shellcheck` optional |
+| `make dev` | local venv at `.venv` + `pip install -e .` | `python3-venv` |
+| `make package` | `mythos-core_*.deb` at `.build/artifacts/` | `Docker` |
+| `make iso` | `mythos-*-amd64.iso` + `.sha256` | `Docker` + 25 GiB tmp + network |
+| `make smoke` | boots signed UEFI ISO in QEMU, captures evidence | `Docker` + `qemu` |
+| `make vm` | VM helper | varies |
+| `make help` | colored help listing all targets | — |
+| `make clean-all` | remove `.build`, venvs, `__pycache__` | — |
 
 `make package` creates an installable Debian package. `make iso` creates a
 hybrid BIOS/UEFI live image and SHA-256 file. `make smoke` validates image
 contents and boots the signed UEFI path in QEMU long enough to capture the
 live desktop for inspection.
+
+Override mirrors/architecture without editing files:
+
+```bash
+MYTHOS_ARCH=amd64 MYTHOS_MIRROR=https://deb.debian.org/debian make iso
+```
+
+## Troubleshooting
+
+See `README.md#troubleshooting` and `mythosctl doctor` on the installed system:
+
+```bash
+mythosctl doctor          # JSON summary: system, diagnostics, hardware, updates, snapshots
+mythosctl doctor --verbose
+mythos-doctor --verbose   # same as above via dedicated entry-point
+python3 -m mythos.cli doctor --verbose  # without installing the package
+```
+
+Common host-build fixes: `sudo apt install shellcheck docker.io python3-venv`
+and `make dev` to populate `.venv`. For ISO builds ensure `docker info` works
+and your user is in the `docker` group. Windows: use WSL2 Debian 13.

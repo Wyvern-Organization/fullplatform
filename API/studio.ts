@@ -169,13 +169,12 @@ export async function trackAnonymousRequest(
   surface = "api",
 ): Promise<void> {
   const ip = request.headers.get("cf-connecting-ip") || "unknown";
-  const bytes = await crypto.subtle.digest(
-    "SHA-256",
-    new TextEncoder().encode(ip),
-  );
-  const ipHash = [...new Uint8Array(bytes)]
-    .map((value) => value.toString(16).padStart(2, "0"))
-    .join("");
+  let ipHash = ipHashMemo.get(request as unknown as object);
+  if (!ipHash) {
+    const bytes = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(ip));
+    ipHash = [...new Uint8Array(bytes)].map((v) => v.toString(16).padStart(2, "0")).join("");
+    ipHashMemo.set(request as unknown as object, ipHash);
+  }
   await db
     .prepare(
       "INSERT INTO request_activity(ip_hash,surface,method,path) VALUES(?,?,?,?)",
@@ -206,6 +205,8 @@ const STUDIO_MINI_FAST_LIMITS = {
   guest: { minute: 5, hour: 30, day: 100 },
   account: { minute: 10, hour: 100, day: 300 },
 } as const;
+// Memoize SHA-256 of IP per Request object to avoid double hashing (track + rate limit + token usage)
+const ipHashMemo = new WeakMap<object, string>();
 type StudioRateWindow = { count: number; resetAt: number };
 const studioMiniFastWindows = new Map<string, StudioRateWindow>();
 
@@ -252,36 +253,33 @@ async function globalRateLimit(
       limits,
     }, 429, { "retry-after": String(retryAfter), "x-ratelimit-limit-minute": String(limits.minute), "x-ratelimit-remaining": String(Math.max(0, limits.minute - minute.count)) });
   }
+  // IP hash memoization per-request (also used by token-usage)
   const identity = accountId
-    ? { clause: "account_id=?", value: accountId }
+    ? { clause: "account_id=?", value: accountId, hash: null as string | null }
     : await (async () => {
-        const bytes = await crypto.subtle.digest(
-          "SHA-256",
-          new TextEncoder().encode(
-            request.headers.get("cf-connecting-ip") || "unknown",
-          ),
-        );
-        return {
-          clause: "ip_hash=?",
-          value: [...new Uint8Array(bytes)]
-            .map((value) => value.toString(16).padStart(2, "0"))
-            .join(""),
-        };
+        const ip = request.headers.get("cf-connecting-ip") || "unknown";
+        // use shared memoized anonymous hash if available via WeakMap
+        const cached = ipHashMemo.get(request as unknown as object);
+        if (cached) return { clause: "ip_hash=?", value: cached, hash: cached };
+        const bytes = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(ip));
+        const hash = [...new Uint8Array(bytes)].map((v) => v.toString(16).padStart(2, "0")).join("");
+        ipHashMemo.set(request as unknown as object, hash);
+        return { clause: "ip_hash=?", value: hash, hash };
       })();
-  // Only inference requests consume the Studio generation envelope. Panel
-  // navigation, model discovery, auth, and project metadata remain cheap and
-  // must not make the chat experience feel quota-bound.
-  const base = `SELECT COUNT(*) AS count FROM request_activity WHERE ${identity.clause} AND surface='studio' AND path='/studio/api/chat' AND created_at>=`;
-  const [minuteRow, hourRow, dayRow] = await Promise.all([
-    db.prepare(`${base}datetime('now','-1 minute')`).bind(identity.value).first<{ count: number }>(),
-    db.prepare(`${base}datetime('now','-1 hour')`).bind(identity.value).first<{ count: number }>(),
-    db.prepare(`${base}datetime('now','-1 day')`).bind(identity.value).first<{ count: number }>(),
-  ]);
+  // Single round-trip conditional aggregation (was 3 separate COUNT queries)
+  const row = await db.prepare(
+    `SELECT
+      SUM(CASE WHEN created_at >= datetime('now','-1 minute') THEN 1 ELSE 0 END) AS minuteCount,
+      SUM(CASE WHEN created_at >= datetime('now','-1 hour') THEN 1 ELSE 0 END) AS hourCount,
+      SUM(CASE WHEN created_at >= datetime('now','-1 day') THEN 1 ELSE 0 END) AS dayCount
+    FROM request_activity
+    WHERE ${identity.clause} AND surface='studio' AND path='/studio/api/chat' AND created_at >= datetime('now','-1 day')`
+  ).bind(identity.value).first<{ minuteCount: number; hourCount: number; dayCount: number }>();
   const limits = accountId ? STUDIO_LIMITS.account : STUDIO_LIMITS.guest;
   const counts = {
-    minute: Number(minuteRow?.count || 0),
-    hour: Number(hourRow?.count || 0),
-    day: Number(dayRow?.count || 0),
+    minute: Number(row?.minuteCount || 0),
+    hour: Number(row?.hourCount || 0),
+    day: Number(row?.dayCount || 0),
   };
   const breached = (Object.keys(limits) as Array<keyof typeof limits>).find(
     (window) => counts[window] > limits[window],
@@ -1129,7 +1127,7 @@ async function usage(db: D1Database, accountId: number): Promise<Response> {
   });
 }
 export async function studioPreview(
-  _request: Request,
+  request: Request,
   env: StudioEnv,
   idOrName: string,
   path: string,
@@ -1144,22 +1142,49 @@ export async function studioPreview(
   const file = safePath(path || "index.html");
   if (!file) return new Response("Not found", { status: 404 });
   const o = await env.STUDIO_FILES.get(`projects/${p.id}/${file}`);
-  return o
-    ? new Response(o.body, {
-        headers: {
-          "content-type":
-            o.httpMetadata?.contentType || "application/octet-stream",
-          "x-content-type-options": "nosniff",
-          // No allow-same-origin: an untrusted published project has an opaque origin,
-          // cannot read Studio cookies, and cannot impersonate the control plane.
-          "content-security-policy":
-            "sandbox allow-scripts allow-forms allow-modals allow-popups; base-uri 'none'; frame-ancestors 'none'",
-          "cross-origin-opener-policy": "same-origin",
-          "cross-origin-resource-policy": "cross-origin",
-          "referrer-policy": "no-referrer",
-        },
-      })
-    : new Response("Not found", { status: 404 });
+  if (!o) return new Response("Not found", { status: 404 });
+  const url = new URL(request.url);
+  const fontParam = url.searchParams.get("font")?.trim() || "";
+  const allowedFonts = new Set(["Manrope","Instrument Sans","Geist","Fragment Mono","DM Mono","Playfair Display"]);
+  const previewFont = allowedFonts.has(fontParam) ? fontParam : "";
+  const contentType = o.httpMetadata?.contentType || "application/octet-stream";
+  const isHtml = file.endsWith(".html") || contentType.includes("text/html");
+  // If ?font= is requested, inject font preview into HTML response (isolated, no cookie access).
+  if (previewFont && isHtml) {
+    const text = await o.text();
+    const fontEnc = encodeURIComponent(previewFont).replace(/%20/g, "+");
+    const fontLink = `<link href="https://fonts.googleapis.com/css2?family=${fontEnc}:wght@400;500;600;700&family=Fragment+Mono&family=Geist:wght@400;500;600&family=Instrument+Sans:wght@400;500;600&display=swap" rel="stylesheet">`;
+    const fontStyle = `<style>html{font-family:'${previewFont}',system-ui,sans-serif}body{font-family:'${previewFont}',system-ui,sans-serif}</style>`;
+    let injected = text;
+    if (/<head[^>]*>/i.test(text)) injected = text.replace(/<head[^>]*>/i, (m) => m + fontLink + fontStyle);
+    else injected = fontLink + fontStyle + text;
+    return new Response(injected, {
+      headers: {
+        "content-type": "text/html; charset=utf-8",
+        "x-content-type-options": "nosniff",
+        "content-security-policy":
+          "sandbox allow-scripts allow-forms allow-modals allow-popups; base-uri 'none'; frame-ancestors 'none'",
+        "cross-origin-opener-policy": "same-origin",
+        "cross-origin-resource-policy": "cross-origin",
+        "referrer-policy": "no-referrer",
+        "cache-control": "no-store",
+        "x-preview-font": previewFont,
+      },
+    });
+  }
+  return new Response(o.body, {
+    headers: {
+      "content-type": contentType,
+      "x-content-type-options": "nosniff",
+      // No allow-same-origin: an untrusted published project has an opaque origin,
+      // cannot read Studio cookies, and cannot impersonate the control plane.
+      "content-security-policy":
+        "sandbox allow-scripts allow-forms allow-modals allow-popups; base-uri 'none'; frame-ancestors 'none'",
+      "cross-origin-opener-policy": "same-origin",
+      "cross-origin-resource-policy": "cross-origin",
+      "referrer-policy": "no-referrer",
+    },
+  });
 }
 async function accountFor(r: Request, db: D1Database) {
   const t = r.headers

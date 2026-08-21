@@ -1,12 +1,56 @@
 # OSAII Platform
 
+[![Node 22](https://img.shields.io/badge/node-22-brightgreen)](#local-development) [![Wrangler 4](https://img.shields.io/badge/wrangler-4.x-orange)](wrangler.jsonc) [![License GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue)](LICENSE) [![Worker](https://img.shields.io/badge/worker-osaii.wyvernhub.net-black)](https://osaii.wyvernhub.net/health)
+
 OSAII Platform is the umbrella for OSAII products and services. Its API and OSS Studio are separate, symbiotic surfaces: the API is for calling models from code, while Studio is the focused workspace for Chat, Agent, Agent Swarm, projects, tools, and deliverables. Masque is the separate character product, and MythOS is the desktop operating system. Shared services remain optional at each product boundary.
 
 Use the [Platform home](https://osaii.wyvernhub.net/) to understand the product boundary, then choose the surface that fits the work.
 
+## ⚡ Single-line installs
+
+```bash
+# Full Platform (Worker + Studio + Masque + MythOS + Cosaii)
+curl -fsSL https://osaii.wyvernhub.net/install/fullplatform.sh | bash
+# Windows PowerShell
+irm https://osaii.wyvernhub.net/install/fullplatform.ps1 | iex
+
+# Cosaii CLI only
+curl -fsSL https://osaii.wyvernhub.net/install/cosaii.sh | sh
+# Worker only (from repo)
+npm run setup && npm run dev
+# MythOS (from MythOS/ dir)
+make -C MythOS validate
+```
+
+Local dry-run: `bash install.sh --dry-run` → `npm run check:env` → `npm run dev`
+
+```
+                    ┌─────────────────────────────────────────┐
+                    │           osaii.wyvernhub.net            │
+                    │        Cloudflare Worker (osaii)         │
+                    └──────┬──────────────┬──────────────┬─────┘
+                           │              │              │
+              ┌────────────▼─┐  ┌─────────▼─────┐  ┌────▼────────┐
+              │  /api/v1/*   │  │ /studio/new   │  │  /masque    │
+              │  /api/ask    │  │ /studio/*     │  │  /masque/*  │
+              │  OpenAI-compat│  │ Chat/Agent/   │  │  Characters │
+              │  Poolside +   │  │ Swarm + VFS/  │  │  DO Session │
+              │  Logfare/Bits │  │ MCP/Preview   │  │  Vector/R2  │
+              └──────┬───────┘  └──────┬────────┘  └─────┬───────┘
+                     │                 │                  │
+              ┌──────▼─────────────────▼──────────────────▼──────┐
+              │  D1 (osaii)  ·  R2 (osaii-studio)  ·  AI / Vectorize / Browser / DOs  │
+              └──────────────────────────────────────────────────┘
+         ┌──────────────┐  ┌──────────────┐
+         │   Cosaii     │  │   MythOS     │
+         │  Rust + TUI  │  │  Debian OS   │
+         │  local-first │  │  opt-in apps │
+         └──────────────┘  └──────────────┘
+```
+
 ## Cosaii CLI
 
-Cosaii (pronounced “cozy”) is the Platform’s local agent. `cosaii-app-server` is a persistent Rust runtime that owns authentication, encrypted local sessions, agent turns, tools, permissions, and optional remote control. `cosaii` is its thin OpenTUI/Solid client. Conversations stay on the local machine rather than synchronizing into Studio.
+Cosaii (pronounced “cozy”) is the Platform's local agent. `cosaii-app-server` is a persistent Rust runtime that owns authentication, encrypted local sessions, agent turns, tools, permissions, and optional remote control. `cosaii` is its thin OpenTUI/Solid client. Conversations stay on the local machine rather than synchronizing into Studio.
 
 ```bash
 curl -fsSL https://osaii.wyvernhub.net/install/cosaii.sh | sh
@@ -65,24 +109,37 @@ MythOS does not require an OSAII account or ship OSAII launchers in the default 
 ## Local development
 
 ```bash
+npm run setup          # npm ci + cp .dev.vars.example .dev.vars + checks + D1 dry-run
+# or
+bash install.sh
+# or manually:
 npm install
 cp .dev.vars.example .dev.vars
-npx wrangler dev --config wrangler.jsonc
+npm run check:env      # validate secrets (POOLSIDE_API_KEY / POOOLSIDE_API_KEY alias)
+npm run db:migrate:local
+npm run dev            # wrangler dev on :8787  (npm run dev:studio → :8788)
 ```
 
-Add the required development credentials to `.dev.vars`. Never commit `.env` or `.dev.vars`.
+Add the required development credentials to `.dev.vars`. Never commit `.env` or `.dev.vars`. `POOLSIDE_API_KEY` is canonical (2 O's); `POOOLSIDE_API_KEY` (3 O's) is a legacy alias — set either one.
+
+Requires Node 22 (see `.nvmrc` / `.node-version` / `engines`). Also: `cargo` for Cosaii, `bun` for the TUI, `docker` for MythOS images, `python3` for MythOS tests.
 
 ## Validation
 
 ```bash
-node --test tests/studio-contract.test.mjs
-npx wrangler deploy --dry-run --config wrangler.jsonc
+npm test               # node --test tests/*.test.mjs
+npm run test:all       # + cargo test + MythOS pytest + tsc
+npm run typecheck
+npm run build          # wrangler deploy --dry-run
+make test && make deploy-dry
 ```
 
 ## Deployment
 
 ```bash
 npx wrangler deploy --config wrangler.jsonc
+# or
+make deploy-dry && npx wrangler deploy --config wrangler.jsonc
 ```
 
 ## Open source boundary

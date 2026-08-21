@@ -1,4 +1,4 @@
-import { access, mkdir, readFile, rm, writeFile } from "node:fs/promises"
+import { access, chmod, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises"
 import { constants, openSync } from "node:fs"
 import { homedir, userInfo } from "node:os"
 import { dirname, join } from "node:path"
@@ -21,15 +21,23 @@ const windowsUser = (process.env.USERNAME || "user").replace(/[^a-z0-9]/gi, "-")
 export const socketPath = process.platform === "win32" ? `\\\\.\\pipe\\cosaii-app-server-${windowsUser}` : join(cosaiiHome, "app-server.sock")
 const pidPath = join(cosaiiHome, "app-server.pid")
 
-export async function socketResponds(): Promise<boolean> {
+function logWithTimestamp(level: string, msg: string): void {
+  const ts = new Date().toISOString()
+  // Use stderr for daemon management logs so stdout stays JSON-clean
+  console.error(`[${ts}] ${level}: ${msg}`)
+}
+
+export async function socketResponds(timeoutMs = 750): Promise<boolean> {
   const rpc = new RpcClient()
   try {
     await Promise.race([
       rpc.connect(socketPath),
-      Bun.sleep(750).then(() => { throw new Error("status timeout") }),
+      Bun.sleep(timeoutMs).then(() => { throw new Error("status timeout") }),
     ])
-    const status = await rpc.call("server/status")
-    return Boolean(status?.version && status?.protocol)
+    // Prefer health endpoint for richer checks, fallback to status
+    let status: any = null
+    try { status = await rpc.call("server/health") } catch { status = await rpc.call("server/status") }
+    return Boolean(status?.version && (status?.protocol || status?.status === "ok"))
   } catch { return false }
   finally { rpc.close() }
 }
@@ -43,7 +51,14 @@ export function serverBinary(): string {
 
 export async function ensureDaemon(): Promise<void> {
   if (await socketResponds()) return
+  // Robust data-dir handling: create parents, permissions 0700, verbose diagnostics
+  const verbose = !!process.env.COSAII_VERBOSE
+  if (verbose) logWithTimestamp("info", `ensuring daemon — home=${cosaiiHome} data=${cosaiiDataDir}`)
   await mkdir(cosaiiHome, { recursive: true, mode: 0o700 })
+  await mkdir(cosaiiDataDir, { recursive: true, mode: 0o700 }).catch(()=>{})
+  // Validate permissions 0700 if possible
+  try { await chmod(cosaiiHome, 0o700) } catch {}
+  try { await chmod(cosaiiDataDir, 0o700) } catch {}
   try {
     const pid = Number((await readFile(pidPath, "utf8")).trim())
     if (pid && processIsAlive(pid)) throw new Error(`Cosaii app-server process ${pid} is alive but unavailable. Run cosaii daemon restart.`)
@@ -53,21 +68,37 @@ export async function ensureDaemon(): Promise<void> {
     if (String(error.message).includes("is alive")) throw error
   }
   const binary = serverBinary()
-  await access(binary, constants.X_OK).catch(() => { throw new Error(`Cannot find ${binary}. Install a release containing both cosaii and cosaii-app-server, or set COSAII_APP_SERVER_BIN.`) })
-  const logFd = openSync(join(cosaiiHome, "app-server.log"), "a", 0o600)
-  const child = spawn(binary, [], { detached: true, stdio: ["ignore", logFd, logFd], env:{...process.env,COSAII_HOME:cosaiiHome,COSAII_DATA_DIR:cosaiiDataDir} })
+  await access(binary, constants.X_OK).catch(() => { throw new Error(`Cannot find ${binary}. Install a release containing both cosaii and cosaii-app-server, or set COSAII_APP_SERVER_BIN. Verify with: cosaii --version && cosaii doctor`) })
+  // Ensure log file exists with 0600
+  const logPath = join(cosaiiHome, "app-server.log")
+  const logFd = openSync(logPath, "a", 0o600)
+  if (verbose) logWithTimestamp("info", `spawning app-server ${binary}`)
+  const child = spawn(binary, process.env.COSAII_VERBOSE ? ["--verbose"] : [], { detached: true, stdio: ["ignore", logFd, logFd], env:{...process.env,COSAII_HOME:cosaiiHome,COSAII_DATA_DIR:cosaiiDataDir} })
   child.unref()
+  // Exponential backoff heartbeat-style wait for ready
   for (let attempt=0; attempt<50; attempt++) {
-    await Bun.sleep(100)
-    if (await socketResponds()) return
+    await Bun.sleep(100 + Math.min(attempt*20, 400))
+    if (await socketResponds()) {
+      if (verbose) logWithTimestamp("info", `daemon became ready after ${attempt+1} attempts`)
+      return
+    }
   }
-  throw new Error("Cosaii app-server did not become ready. Run cosaii daemon logs.")
+  throw new Error("Cosaii app-server did not become ready. Run cosaii daemon logs --lines 100 or cosaii doctor for diagnostics.")
 }
 
 export async function daemonPid(): Promise<number|null> { try { return Number((await readFile(pidPath,"utf8")).trim()) || null } catch { return null } }
 export function processIsAlive(pid:number):boolean { try { process.kill(pid,0); return true } catch { return false } }
 export async function stopDaemon():Promise<boolean> { const pid=await daemonPid(); if(!pid||!processIsAlive(pid)) return false; process.kill(pid,"SIGTERM"); return true }
 export function daemonLogPath():string { return join(cosaiiHome,"app-server.log") }
+
+// Health helper for `cosaii health` and doctor
+export async function daemonHealth(): Promise<any> {
+  const rpc = new RpcClient()
+  try {
+    await rpc.connect(socketPath)
+    return await rpc.call("server/health")
+  } finally { rpc.close() }
+}
 
 function run(command:string,args:string[]):Promise<void>{return new Promise((resolve,reject)=>{const child=spawn(command,args,{stdio:"inherit"});child.once("exit",code=>code===0?resolve():reject(new Error(`${command} exited ${code}`)));child.once("error",reject)})}
 

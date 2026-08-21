@@ -35,7 +35,18 @@ from .updates import (
     update_history,
     update_status,
 )
+from .constants import VERSION
 from .util import MythOSError, require_root, run
+
+
+def _version() -> str:
+    try:
+        # Prefer installed package metadata when available.
+        from importlib.metadata import version as _pkg_version
+
+        return _pkg_version("mythos")
+    except Exception:
+        return VERSION
 
 
 def _print(value: Any, pretty: bool = True) -> None:
@@ -93,90 +104,134 @@ def _ssh(enabled: bool) -> dict[str, Any]:
     return {"ssh": "enabled" if enabled else "disabled"}
 
 
+def _doctor(verbose: bool = False) -> dict[str, Any]:
+    """Aggregate health checks without requiring root — mirrors `mythos doctor`."""
+
+    from .recovery import diagnostic_report
+
+    status = system_status()
+    diagnostics = diagnostic_report()
+    hardware = hardware_report()
+    update = update_status()
+    snapshots = list_snapshots()
+
+    # Summarize failures for humans while keeping machine-readable detail.
+    failing = [c for c in diagnostics.get("checks", []) if not c.get("ok")]
+    issues: list[str] = list(status.get("concerns", []))
+    if failing:
+        issues.extend(f"diagnostics: {item['label']}" for item in failing)
+    if status.get("firewall") == "disabled":
+        issues.append("Firewall is disabled — enable with System Hub > Privacy or `mythosctl` via GUI.")
+    if not status.get("atomic_updates"):
+        issues.append("Transactional updates unavailable — Btrfs/Snapper layout not detected (expected on live/dev hosts).")
+
+    result: dict[str, Any] = {
+        "version": _version(),
+        "healthy": status.get("health") == "ready" and not failing,
+        "health": status.get("health"),
+        "issues": issues,
+        "system": status,
+        "update": update,
+        "diagnostics": diagnostics,
+        "hardware": hardware,
+        "snapshots": {"count": len(snapshots), "items": snapshots[:8] if not verbose else snapshots},
+    }
+    if verbose:
+        result["verbose"] = True
+    return result
+
+
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="mythosctl", description="MythOS system control")
-    parser.add_argument("--compact", action="store_true", help="print compact JSON")
+    parser = argparse.ArgumentParser(
+        prog="mythosctl",
+        description="MythOS system control — JSON-first CLI that mirrors System Hub actions.",
+        epilog="Examples: mythosctl status | mythosctl doctor | mythosctl hardware | mythosctl update check --refresh | mythosctl snapshots list",
+    )
+    parser.add_argument("--version", action="version", version=f"%(prog)s { _version() }")
+    parser.add_argument("--compact", action="store_true", help="print compact JSON (no pretty indent)")
     commands = parser.add_subparsers(dest="command", required=True)
 
-    commands.add_parser("status", help="show system readiness")
-    commands.add_parser("hardware", help="run the hardware support report")
+    commands.add_parser("status", help="show system readiness (product, channel, health, disk, secure-boot, firewall, encryption)")
+    doc = commands.add_parser("doctor", help="aggregate health: system + diagnostics + hardware + updates + snapshots")
+    doc.add_argument("--verbose", action="store_true", help="include full snapshot list and expanded detail")
+    commands.add_parser("hardware", help="run the hardware support report (GPU/Wi-Fi/Bluetooth/etc.)")
 
-    update = commands.add_parser("update", help="manage transactional system updates").add_subparsers(
+    update = commands.add_parser("update", help="manage transactional system updates (offline, snapshotted, roll-back on failure)").add_subparsers(
         dest="update_command", required=True
     )
-    update.add_parser("status")
-    update.add_parser("history")
-    check = update.add_parser("check")
-    check.add_argument("--refresh", action="store_true")
-    update.add_parser("stage")
-    update.add_parser("cancel")
-    update.add_parser("apply-offline")
-    update.add_parser("bless")
-    channel = update.add_parser("channel")
-    channel.add_argument("name", choices=["stable", "current"])
+    update.add_parser("status", help="show staged/healthy/failed state and channel")
+    update.add_parser("history", help="list recent update transactions (last 50)")
+    check = update.add_parser("check", help="simulate dist-upgrade and list pending packages")
+    check.add_argument("--refresh", action="store_true", help="apt-get update before check (requires root)")
+    update.add_parser("stage", help="download update and create pre-snapshot (requires Btrfs/Snapper)")
+    update.add_parser("cancel", help="cancel a staged update")
+    update.add_parser("apply-offline", help="apply a staged update offline (systemd offline-update path)")
+    update.add_parser("bless", help="bless the current boot as healthy after an offline update")
+    channel = update.add_parser("channel", help="switch stable ↔ current (backports)")
+    channel.add_argument("name", choices=["stable", "current"], help="channel name")
 
     drivers = commands.add_parser("drivers", help="manage drivers and firmware").add_subparsers(
         dest="drivers_command", required=True
     )
-    drivers.add_parser("recommend")
-    drivers.add_parser("install-recommended")
-    drivers.add_parser("firmware")
-    drivers.add_parser("update-firmware")
-    drivers.add_parser("generic-wifi")
-    drivers.add_parser("generic-networking")
+    drivers.add_parser("recommend", help="list recommended driver packages for this hardware")
+    drivers.add_parser("install-recommended", help="install recommended driver packages (requires root, may recommend reboot)")
+    drivers.add_parser("firmware", help="list firmware updates via fwupd")
+    drivers.add_parser("update-firmware", help="apply firmware updates (requires root)")
+    drivers.add_parser("generic-wifi", help="enable Linux wireless stack and unblock Wi-Fi (requires root)")
+    drivers.add_parser("generic-networking", help="restart NetworkManager and refresh DNS (requires root)")
 
-    snapshots = commands.add_parser("snapshots", help="manage restore points").add_subparsers(
+    snapshots = commands.add_parser("snapshots", help="manage Btrfs/Snapper restore points").add_subparsers(
         dest="snapshot_command", required=True
     )
-    snapshots.add_parser("list")
-    create = snapshots.add_parser("create")
-    create.add_argument("--description", default="Manual restore point")
-    rollback = snapshots.add_parser("rollback")
-    rollback.add_argument("number", type=int)
+    snapshots.add_parser("list", help="list available snapshots (empty if Snapper not configured)")
+    create = snapshots.add_parser("create", help="create a manual restore point (requires root)")
+    create.add_argument("--description", default="Manual restore point", help="snapshot description")
+    rollback = snapshots.add_parser("rollback", help="schedule rollback to a snapshot (requires root, needs reboot)")
+    rollback.add_argument("number", type=int, help="snapshot number to restore")
 
     recovery = commands.add_parser("recovery", help="diagnose and repair an installation").add_subparsers(
         dest="recovery_command", required=True
     )
-    recovery.add_parser("diagnostics")
-    recovery.add_parser("discover")
-    recovery.add_parser("repair-network")
-    recovery.add_parser("reset-settings")
-    bootloader = recovery.add_parser("repair-bootloader")
-    bootloader.add_argument("root_device")
-    bootloader.add_argument("--efi-device")
+    recovery.add_parser("diagnostics", help="run failed-services, boot errors, network, dns, firmware checks")
+    recovery.add_parser("discover", help="discover block devices that look like MythOS installations")
+    recovery.add_parser("repair-network", help="restart NetworkManager and flush DNS (requires root)")
+    recovery.add_parser("reset-settings", help="backup and reset GNOME/desktop settings")
+    bootloader = recovery.add_parser("repair-bootloader", help="repair GRUB for an explicit MythOS root device (requires root)")
+    bootloader.add_argument("root_device", help="root block device, e.g. /dev/nvme0n1p2")
+    bootloader.add_argument("--efi-device", help="EFI system partition device, e.g. /dev/nvme0n1p1")
 
-    features = commands.add_parser("feature", help="manage optional capability profiles").add_subparsers(
+    features = commands.add_parser("feature", help="manage optional capability profiles (see data/catalog/features.json)").add_subparsers(
         dest="feature_command", required=True
     )
-    features.add_parser("list")
-    feature_enable = features.add_parser("enable")
-    feature_enable.add_argument("name")
-    feature_disable = features.add_parser("disable")
-    feature_disable.add_argument("name")
+    features.add_parser("list", help="list profiles with install status")
+    feature_enable = features.add_parser("enable", help="install and enable a profile (requires root)")
+    feature_enable.add_argument("name", help="profile key, e.g. gaming, windows-apps, osaii-web-apps")
+    feature_disable = features.add_parser("disable", help="disable a profile without deleting app data (requires root)")
+    feature_disable.add_argument("name", help="profile key to disable")
 
-    compatibility = commands.add_parser("compatibility", help="query application compatibility").add_subparsers(
+    compatibility = commands.add_parser("compatibility", help="query Windows/Bottles compatibility database").add_subparsers(
         dest="compatibility_command", required=True
     )
-    lookup = compatibility.add_parser("lookup")
-    lookup.add_argument("value")
-    search = compatibility.add_parser("search")
-    search.add_argument("query", nargs="?", default="")
+    lookup = compatibility.add_parser("lookup", help="lookup a single installer name")
+    lookup.add_argument("value", help="installer filename, e.g. setup.exe")
+    search = compatibility.add_parser("search", help="search the compatibility DB")
+    search.add_argument("query", nargs="?", default="", help="search query")
 
-    macos = commands.add_parser("macos", help="inspect experimental macOS compatibility").add_subparsers(
+    macos = commands.add_parser("macos", help="inspect experimental macOS compatibility (research preview)").add_subparsers(
         dest="macos_command", required=True
     )
-    macos.add_parser("runtime")
-    inspect = macos.add_parser("inspect")
-    inspect.add_argument("bundle")
-    macos.add_parser("setup")
+    macos.add_parser("runtime", help="show Darling runtime info")
+    inspect = macos.add_parser("inspect", help="inspect a .app bundle")
+    inspect.add_argument("bundle", help="path to .app bundle")
+    macos.add_parser("setup", help="install/build the pinned Darling runtime (requires root, ~25 GiB)")
 
-    preference = commands.add_parser("preference", help="change a system-wide preference")
-    preference.add_argument("key", choices=["diagnostics", "transparency", "macos-preview"])
-    preference.add_argument("value", choices=["enabled", "disabled"])
-    preference.add_argument("--acknowledge-compatibility-warning", action="store_true")
+    preference = commands.add_parser("preference", help="change a system-wide preference (requires root)")
+    preference.add_argument("key", choices=["diagnostics", "transparency", "macos-preview"], help="preference key")
+    preference.add_argument("value", choices=["enabled", "disabled"], help="desired value")
+    preference.add_argument("--acknowledge-compatibility-warning", action="store_true", help="required when enabling macos-preview")
 
-    ssh = commands.add_parser("ssh", help="enable or disable remote login")
-    ssh.add_argument("state", choices=["enable", "disable"])
+    ssh = commands.add_parser("ssh", help="enable or disable remote login (requires root, manages UFW)")
+    ssh.add_argument("state", choices=["enable", "disable"], help="enable or disable the SSH server")
 
     finalize = commands.add_parser("install-finalize", help=argparse.SUPPRESS)
     finalize.add_argument("target")
@@ -188,6 +243,8 @@ def build_parser() -> argparse.ArgumentParser:
 def dispatch(args: argparse.Namespace) -> Any:
     if args.command == "status":
         return system_status()
+    if args.command == "doctor":
+        return _doctor(verbose=getattr(args, "verbose", False))
     if args.command == "hardware":
         return hardware_report()
     if args.command == "update":
@@ -264,7 +321,14 @@ def dispatch(args: argparse.Namespace) -> Any:
 
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
-    args = parser.parse_args(argv)
+    try:
+        args = parser.parse_args(argv)
+    except SystemExit as exc:
+        # Argparse already printed help/error; preserve exit code but make
+        # missing-command hint friendlier on interactive shells.
+        if exc.code == 2 and not argv:
+            print(json.dumps({"error": "No command given. Try: mythosctl --help or mythosctl doctor", "ok": False}), file=sys.stderr)
+        raise
     try:
         value = dispatch(args)
     except MythOSError as exc:
@@ -273,6 +337,23 @@ def main(argv: list[str] | None = None) -> int:
     except KeyboardInterrupt:
         print(json.dumps({"error": "Operation cancelled.", "ok": False}), file=sys.stderr)
         return 130
+    _print(value, pretty=not args.compact)
+    return 0
+
+
+def doctor_main(argv: list[str] | None = None) -> int:
+    """Direct entry-point for `mythos-doctor` — equivalent to `mythosctl doctor`."""
+
+    parser = argparse.ArgumentParser(prog="mythos-doctor", description="MythOS doctor — quick health check (equivalent to `mythosctl doctor`)")
+    parser.add_argument("--version", action="version", version=f"%(prog)s { _version() }")
+    parser.add_argument("--compact", action="store_true", help="print compact JSON")
+    parser.add_argument("--verbose", action="store_true", help="include full snapshot list and expanded detail")
+    args = parser.parse_args(argv)
+    try:
+        value = _doctor(verbose=args.verbose)
+    except MythOSError as exc:
+        print(json.dumps({"error": str(exc), "ok": False}), file=sys.stderr)
+        return 1
     _print(value, pretty=not args.compact)
     return 0
 

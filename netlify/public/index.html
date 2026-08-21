@@ -1,1 +1,53 @@
-<!doctype html><meta charset="utf-8"><title>OSS Studio Codex adapter</title><p>OSS Studio Codex adapter is online.</p>
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#0a0a0b">
+<link rel="icon" href="/osaii.png" type="image/png">
+<title>OSS Studio Codex adapter</title>
+<style>
+:root{--bg:#0a0a0b;--panel:#141417;--line:rgba(255,255,255,.08);--text:#f5f5f1;--muted:#a7a7a0;--green:#34d17e}
+*{box-sizing:border-box}html,body{height:100%}body{margin:0;background:var(--bg);color:var(--text);font:14px/1.6 Manrope,system-ui,sans-serif;display:grid;place-items:center;padding:24px}
+.card{max-width:560px;width:100%;background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:28px;box-shadow:0 28px 90px rgba(0,0,0,.5)}
+.brand{font:600 11px 'DM Mono',monospace;letter-spacing:.08em;text-transform:uppercase;color:var(--green);margin-bottom:8px}
+h1{margin:0 0 8px;font:700 22px Manrope;letter-spacing:-.02em}
+p{margin:0;color:var(--muted);line-height:1.6}
+a{color:var(--green)}
+code{background:rgba(255,255,255,.07);border-radius:6px;padding:2px 6px;font:12px 'DM Mono',monospace}
+.preview-banner{display:none;position:fixed;top:0;left:0;right:0;z-index:9999;background:linear-gradient(90deg,#34d17e,#f2c66d);color:#04130b;padding:7px 14px;font:700 11px 'DM Mono',monospace;text-align:center;letter-spacing:.07em;text-transform:uppercase}
+.preview-banner.show{display:block}
+body.has-preview{padding-top:42px}
+.status{margin-top:14px;display:flex;gap:8px;align-items:center;font:600 12px Manrope;color:var(--text)}
+.status i{width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 0 6px rgba(52,209,126,.15)}
+</style>
+</head>
+<body>
+<div id="previewBanner" class="preview-banner">⬢ Preview deploy — not production · <a href="https://osaii.wyvernhub.net/" style="color:#04130b">Open production</a></div>
+<main class="card">
+<div class="brand">OSAII Platform · Codex adapter</div>
+<h1>OSS Studio Codex adapter is online.</h1>
+<p>This Netlify Function proxies ChatGPT Codex via OAuth. Use the Worker at <a href="https://osaii.wyvernhub.net/health">osaii.wyvernhub.net/health</a>. For Studio, open <a href="https://osaii.wyvernhub.net/studio/new">/studio/new</a> or the preview at <a href="https://osaii.wyvernhub.net/studio/preview">/studio/preview</a> (Preview <i>ƒ</i>).</p>
+<p style="margin-top:10px">Endpoints: <code>POST /v1/chat/completions</code> · <code>GET /v1/models</code> · <code>POST /v1/images/generations</code></p>
+<div class="status"><i></i> Adapter ready</div>
+<p style="margin-top:12px;color:var(--muted);font-size:11px" id="adapterInfo"></p>
+</main>
+<script>
+// Preview f + Deploy Preview polish: show banner + diagnostics when on *.netlify.app or ?preview=1
+(function(){
+  var isPreview = location.hostname.includes('deploy-preview--') || (location.hostname.includes('--') && location.hostname.endsWith('.netlify.app')) || location.hostname.endsWith('.netlify.app') || new URLSearchParams(location.search).get('preview')==='1' || new URLSearchParams(location.search).get('preview_f')==='1';
+  // Also detect Netlify preview via header hint from previous fetch (if Worker set x-preview-deploy)
+  if (isPreview) {
+    document.getElementById('previewBanner').classList.add('show');
+    document.body.classList.add('has-preview');
+  }
+  var info = document.getElementById('adapterInfo');
+  if (info) {
+    var deployUrl = location.origin;
+    var isNetlify = location.hostname.endsWith('.netlify.app');
+    info.textContent = (isPreview ? 'Preview deploy ' : 'Production ') + deployUrl + (isNetlify ? ' · Netlify Functions' : '') + ' · ' + new Date().toISOString().slice(0,10);
+  }
+})();
+</script>
+</body>
+</html>

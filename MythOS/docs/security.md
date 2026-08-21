@@ -1,5 +1,27 @@
 # MythOS v1 security model
 
+## Single-line install trust
+
+MythOS builds are deterministic and served via HTTPS. Prefer the pinned
+installer served from the Platform origin:
+
+```bash
+curl -fsSL https://osaii.wyvernhub.net/install/mythos.sh | bash -s -- --dry-run  # preview
+curl -fsSL https://osaii.wyvernhub.net/install/mythos.sh | bash
+```
+
+The local copy is `MythOS/install.sh` (see `README.md`). Both install only from
+`deb.debian.org` and the `openplatform` repository; they do not fetch opaque
+binaries. Verify a released ISO or package bundle with its companion
+`SHA256SUMS`/`*.sha256` before executing any installer:
+
+```bash
+sha256sum --check --strict mythos-*-amd64.iso.sha256
+sha256sum --check --strict SHA256SUMS  # for in-place .tar.gz bundles
+```
+
+Health check after install: `mythosctl doctor` or `mythos-doctor`.
+
 ## Defaults
 
 - Debian's signed shim, GRUB, and kernel packages provide the Secure Boot path.

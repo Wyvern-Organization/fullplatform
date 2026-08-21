@@ -83,15 +83,15 @@ function usageFromHeaders(headers: Headers): TokenUsage | null {
   return Object.values(usage).some((value) => value !== null) ? usage : null;
 }
 
+const anonHashMemo = new WeakMap<object, string>();
 async function anonymousHash(request: Request): Promise<string> {
+  const memo = anonHashMemo.get(request as unknown as object);
+  if (memo) return memo;
   const address = request.headers.get("cf-connecting-ip") || "unknown";
-  const digest = await crypto.subtle.digest(
-    "SHA-256",
-    new TextEncoder().encode(address),
-  );
-  return [...new Uint8Array(digest)]
-    .map((value) => value.toString(16).padStart(2, "0"))
-    .join("");
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(address));
+  const hash = [...new Uint8Array(digest)].map((v) => v.toString(16).padStart(2, "0")).join("");
+  anonHashMemo.set(request as unknown as object, hash);
+  return hash;
 }
 
 async function recordTokenUsage(

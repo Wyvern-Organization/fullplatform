@@ -38,6 +38,7 @@ import {
 import {
   apiCorsHeaders,
   poolsideModelRequest,
+  parseRateLimitMeta,
   rateLimitModel,
   rateLimitFastMode,
   poolsideModels,
@@ -84,6 +85,14 @@ import {
   cosaiiPowerShellInstaller,
   cosaiiShellInstaller,
 } from "../API/cosaii-install";
+import {
+  fullplatformPowerShellInstaller,
+  fullplatformShellInstaller,
+} from "../API/fullplatform-install";
+import {
+  mythosPowerShellInstaller,
+  mythosShellInstaller,
+} from "../API/mythos-install";
 import { docsPage } from "../API/docs";
 import { MYTHOS_RELEASE, mythosPage } from "../API/mythos";
 import { getSemanticCache, putSemanticCache } from "./lib/semantic-cache";
@@ -109,10 +118,13 @@ import osaiiIcon from "../osaii.png";
 interface Env {
   DB: D1Database;
   INVITE_SECRET?: string;
+  /** Canonical (2 O's). Legacy alias POOOLSIDE_API_KEY (3 O's) still supported. */
+  POOLSIDE_API_KEY?: string;
   POOOLSIDE_API_KEY?: string;
   LOGFARE_API_KEY?: string;
   GROQ_API_KEY?: string;
   POLLINATIONS_API_KEY?: string;
+  CLOUDFLARE_API_TOKEN?: string;
   STUDIO_FILES: R2Bucket;
   BROWSER?: import("@cloudflare/puppeteer").BrowserWorker;
   AI?: Ai;
@@ -120,6 +132,121 @@ interface Env {
   MASQUE_SESSIONS: DurableObjectNamespace<MasqueSession>;
   COSAII_RELAYS: DurableObjectNamespace<CosaiiRelay>;
   MASQUE_ADMIN_EMAILS?: string;
+  /** Preview f feature flag: set to "0" or "false" to disable T3 Preview font features. Default enabled. */
+  PREVIEW_F?: string;
+}
+
+// Normalize helpers for the 3-O / 2-O typo: canonical POOLSIDE_API_KEY, legacy POOOLSIDE_API_KEY
+function poolsideKey(env: Env): string | undefined {
+  return env.POOOLSIDE_API_KEY ?? env.POOLSIDE_API_KEY;
+}
+
+// ── Netlify Deploy Preview + OSAII Studio Preview f (in-app polish) ──
+// Netlify Deploy Previews are served from deploy-preview--*.netlify.app and inject
+// X-Nf-Deploy-Context / X-Nf-Preview headers. The Cloudflare Worker also serves
+// /studio/preview (T3) via PREVIEW_F. We detect preview deploy via host or those
+// headers so that HTML responses can show a banner and use no-store caching.
+// Query ?preview=1 forces preview UI for local testing.
+function isNetlifyPreviewRequest(request: Request): boolean {
+  const url = new URL(request.url);
+  if (url.searchParams.get("preview") === "1" || url.searchParams.get("preview_f") === "1") return true;
+  if (url.hostname.includes("deploy-preview--") || (url.hostname.includes("--") && url.hostname.endsWith(".netlify.app"))) return true;
+  if (url.hostname.endsWith(".netlify.app") && request.headers.get("x-nf-request-id")) return true;
+  const deployContext = request.headers.get("x-nf-deploy-context") || request.headers.get("x-netlify-context");
+  if (deployContext === "deploy-preview" || deployContext === "branch-deploy") return true;
+  if (request.headers.get("x-nf-preview") === "true") return true;
+  return false;
+}
+function escapeHtmlAttr(s: string): string {
+  return s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c] || c));
+}
+function previewBannerHtml(request: Request): string {
+  const url = new URL(request.url);
+  const branch = request.headers.get("x-nf-branch") || url.searchParams.get("branch") || "";
+  const label = branch && branch !== "preview" ? ` · ${escapeHtmlAttr(branch)}` : "";
+  return `<div data-preview-banner style="position:sticky;top:0;z-index:9999;background:linear-gradient(90deg,#34d17e,#f2c66d);color:#04130b;padding:7px 14px;font:700 11px/1.5 'DM Mono',ui-monospace,monospace;text-align:center;letter-spacing:.07em;text-transform:uppercase;border-bottom:1px solid rgba(0,0,0,.08)">⬢ Preview deploy — not production${label} · <a href="https://osaii.wyvernhub.net${escapeHtmlAttr(url.pathname)}" style="color:#04130b;text-decoration:underline;text-underline-offset:2px">Open production</a></div>`;
+}
+function withPreviewBanner(html: string, request: Request): string {
+  if (!isNetlifyPreviewRequest(request)) return html;
+  const banner = previewBannerHtml(request);
+  if (html.includes("<body>")) return html.replace("<body>", "<body>" + banner);
+  const m = html.match(/<body[^>]*>/i);
+  if (m) return html.replace(m[0], m[0] + banner);
+  return banner + html;
+}
+function previewHeaders(request: Request, headers: Record<string, string>): Record<string, string> {
+  if (!isNetlifyPreviewRequest(request)) return headers;
+  return {
+    ...headers,
+    "cache-control": "no-store, must-revalidate, max-age=0",
+    "netlify-cdn-cache-control": "no-store, durable=false",
+    "cdn-cache-control": "no-store",
+    "x-preview-deploy": "true",
+    "x-robots-tag": "noindex, nofollow",
+  };
+}
+
+// Memoized static HTML (worker isolate reuse avoids per-request string churn on hot docs/home/mythos pages)
+let umbrellaCache: string | null = null;
+let docsCache: string | null = null;
+let mythosCache: string | null = null;
+let productsCache: string | null = null;
+function getUmbrella(): string {
+  if (umbrellaCache) return umbrellaCache;
+  umbrellaCache = platformPage()
+    .replaceAll("Open-source AI, ready to build", "The OSAII Platform")
+    .replaceAll("Serious models.<br><em>Open</em> platform.", "One platform.<br><em>Two ways</em> to build.")
+    .replaceAll("OSAII gives builders one OpenAI-compatible endpoint, clear model access, and a workspace for work that needs more than a chat box.", "OSAII Platform brings together the API and OSS Studio. They share models, accounts, safety, and usage while staying separate so you can call AI from code or work directly in a focused workspace.")
+    .replaceAll('href="/studio">Open Studio', 'href="/studio/new">Open Studio')
+    .replaceAll('href="/studio">Studio', 'href="/studio/new">Studio')
+    .replaceAll('<a href="/catalog">Certified models</a>', '<a href="/products">Products</a><a href="/docs">Docs</a>')
+    .replaceAll("<b>One endpoint</b><span>OpenAI-compatible chat and responses</span>", "<b>One platform</b><span>Shared models, accounts, safety, and usage</span>")
+    .replaceAll("<b>Your key</b><span>Named, revocable credentials per account</span>", "<b>Two surfaces</b><span>API for code · Studio for focused work</span>")
+    .replaceAll("<b>Open standard</b><span>Certification and platform, side by side</span>", "<b>Open standard</b><span>Build once, move between both</span>")
+    .replaceAll("Build without translation.", "Choose your way in.")
+    .replaceAll("Start with familiar client code. Choose models, keep credentials under your control.", "API and Studio are distinct products inside one Platform. Start wherever the work starts, then move between them without changing your model access.")
+    .replaceAll("<b>03 / Workspace</b><h3>Move to Studio</h3><p>Use Chat, Agent, Agent Swarm when prompt work becomes project work.</p>", "<b>03 / Symbiotic</b><h3>One Platform, no lock-in</h3><p>The same catalog, safety boundary, account, and usage view connect your first prompt to a production integration.</p>")
+    .replaceAll("Create key, test endpoint, start shipping.", "Create a key for code, or open Studio for hands-on work.")
+    .replaceAll("function open(){modal.classList.add('open')", "function openModal(){modal.classList.add('open')")
+    .replaceAll("b.onclick=open);", "b.onclick=openModal);")
+    .replace("</body>", "<script>for(const id of ['accountButton','heroKey','stripKey']){const button=document.getElementById(id);if(button)button.addEventListener('click',()=>document.getElementById('modal')?.classList.add('open'))}</script></body>");
+  return umbrellaCache;
+}
+function getMythosHtml(): string {
+  if (mythosCache) return mythosCache;
+  mythosCache = mythosPage();
+  return mythosCache;
+}
+function getProductsHtml(): string {
+  if (productsCache) return productsCache;
+  productsCache = productsPage();
+  return productsCache;
+}
+function getDocsHtml(): string {
+  if (docsCache) return docsCache;
+  const docs = docsPage()
+    .replaceAll("Docs · OSS Studio", "Docs · OSAII Platform")
+    .replaceAll("<a class=\"brand\" href=\"/\">OSS <i>Studio</i></a>", "<a class=\"brand\" href=\"/\">OSAII <i>Platform</i></a>")
+    .replaceAll("OSS Studio developer docs", "The OSAII Platform · developer docs")
+    .replaceAll("One OpenAI-compatible gateway for Poolside models, Logfare Advanced models, and the focused OSS Studio workspace.", "The Platform connects a separate OpenAI-compatible API with the focused OSS Studio workspace. They share model access, accounts, safety, and usage.")
+    .replaceAll("<h2>OSS Studio</h2><p class=\"section-intro\">", "<h2>Studio: the hands-on side of the Platform</h2><p class=\"section-intro\">")
+    .replaceAll('<a href="#studio">Studio workspaces</a>', '<a href="#studio">Studio workspaces</a><a href="#mythos">MythOS</a>')
+    .replaceAll("OSS Studio · <a href=\"/\">Platform</a> · <a href=\"/studio/new\">Studio</a> · <a href=\"/api/v1/models\">Models</a>", "OSAII Platform · <a href=\"/api/v1/models\">API</a> · <a href=\"/studio/new\">Studio</a> · <a href=\"/api/v1/models\">Models</a>")
+    .replaceAll("q:'Answer using only the OSS Studio docs. Question: '+q", "q:'Answer only from the OSAII Platform docs below. Never invent URLs, endpoints, model IDs, or capabilities. If the docs do not contain the answer, say so. Known routes: /, /docs, /api/ask, /api/v1/chat/completions, /api/v1/responses, /api/v1/models, /studio/new, /masque, /masque/api/v1, /mythos, /mythos/release.json. Question: '+q")
+    .replaceAll("answer.textContent=text", "answer.textContent=text.replace(/https?:\\/\\/[^\\s)]+/g,url=>{try{const u=new URL(url);const allowed=u.hostname==='osaii.wyvernhub.net'&&['/','/docs','/api/ask','/api/v1/chat/completions','/api/v1/responses','/api/v1/models','/studio/new','/masque','/masque/api/v1','/mythos','/mythos/release.json'].includes(u.pathname);return allowed?url:'[unverified link omitted]'}catch{return '[unverified link omitted]'}})");
+  const mythosDocs = docs.replace(
+    "</main>",
+    `<section id="mythos"><h2>MythOS desktop integration</h2><p class="section-intro">MythOS is a separate desktop operating-system product. It works without an OSAII account or OSAII applications.</p><div class="cards"><div class="card"><strong>Opt-in shortcuts</strong><p>The optional <code>osaii-web-apps</code> System Hub feature adds browser shortcuts for Platform, Studio, and Masque. They are absent by default and removable.</p></div><div class="card"><strong>Separate identity</strong><p>Local users, files, administrator credentials, and diagnostics never become Platform account data. Browser sign-in is explicit.</p></div><div class="card"><strong>Service discovery</strong><p><code>GET /mythos/release.json</code> publishes version, channel, architecture, base, and canonical service routes.</p></div><div class="card"><strong>Release boundary</strong><p>Build validation does not imply broad hardware acceptance. The preview currently targets amd64 PC and Intel Mac boot paths.</p></div></div><p><a href="/mythos">Explore MythOS</a> · <a href="/mythos/release.json">Release metadata</a></p></section></main>`,
+  );
+  const masqueDocs = mythosDocs.replace(
+    "</main>",
+    `<section id="masque"><h2>Masque character platform</h2><p class="section-intro">Masque is a separate 18+ character product that shares OSAII Platform accounts, model infrastructure, safety, usage, and API keys with Studio and the API.</p><div class="code"><code>GET /masque/api/v1/characters?q=detective<br>POST /masque/api/v1/sessions<br>POST /masque/api/v1/sessions/{session_id}/messages</code></div><p>Masque exposes Auto, Fast, and Smart—not the general OpenAI-compatible model catalog. Public API keys use explicit <code>masque:read</code>, <code>masque:chat</code>, <code>masque:write</code>, <code>masque:embed</code>, and <code>masque:webhook</code> scopes. Existing keys begin with no Masque privileges.</p><p>Character resources include revisions, collaborators, remixes, imports, exports, personas, memory, rooms, social actions, reports, embeds, notifications, and aggregate webhooks. Message responses use SSE events named <code>start</code>, <code>delta</code>, <code>finish</code>, and <code>error</code>, with session, message, branch, revision, selected family, finish reason, and usage fields.</p><p><a href="/masque">Open Masque</a> · <a href="/masque/admin">Operator console</a></p></section></main>`,
+  );
+  docsCache = masqueDocs.replace(
+    "</main>",
+    `<section id="cosaii"><h2>Cosaii local agent</h2><p class="section-intro">Cosaii (pronounced cozy) is the Platform's local agentic CLI. A persistent Rust <code>cosaii-app-server</code> owns sessions, tools, permissions, encrypted local persistence, and remote attachment; the OpenTUI client only renders state and sends actions.</p><div class="cards"><div class="card"><strong>Install</strong><p><code>curl -fsSL https://osaii.wyvernhub.net/install/cosaii.sh | sh</code><br>PowerShell: <code>irm https://osaii.wyvernhub.net/install/cosaii.ps1 | iex</code></p></div><div class="card"><strong>Browser login</strong><p>Run <code>cosaii login</code>. The CLI opens the normal Platform authorization page and polls a ten-minute device grant; no localhost callback is opened.</p></div><div class="card"><strong>Local sessions</strong><p>Threads, turns, items, search indexes, snapshots, and audit records stay in the app-server's encrypted SQLite store and are not synchronized into Studio transcripts.</p></div><div class="card"><strong>Permissions</strong><p>Deny All, Allow Low-Risk, Always Ask, and Full Access can be set globally or per canonical workspace. Full Access retains ask rules for destructive and sensitive actions.</p></div></div><pre>cosaii                         # open the TUI\ncosaii run "fix the failing tests" --format jsonl\ncosaii session list\ncosaii daemon status\ncosaii remote enable</pre><p>The versioned JSON-RPC protocol begins with <code>initialize</code> and supports thread, turn, item, account, permission, filesystem, command, MCP, skills, Platform, and remote-control methods. Local transport is WebSocket-framed RPC over a user-only Unix socket or Windows named pipe; embedding uses JSON-RPC over stdio.</p><p>Cloud endpoints are scoped under <code>/platform/api/cli/*</code> and <code>/cosaii/api/v1/*</code>. These require CLI bearer tokens and are not additions to the public OpenAI model list. The encrypted relay transports opaque ciphertext only.</p></section></main>`,
+  );
+  return docsCache;
 }
 
 const JSON_HEADERS = {
@@ -133,7 +260,9 @@ const HTML_HEADERS = {
   "x-frame-options": "DENY",
   "referrer-policy": "strict-origin-when-cross-origin",
   "permissions-policy": "camera=(), microphone=(), geolocation=()",
-  "cache-control": "public, max-age=60, stale-while-revalidate=600",
+  "cache-control": "public, max-age=60, s-maxage=300, stale-while-revalidate=600",
+  "netlify-cdn-cache-control": "public, max-age=300, s-maxage=31536000, durable",
+  "cdn-cache-control": "public, max-age=300, stale-while-revalidate=600",
 };
 
 export default {
@@ -153,7 +282,9 @@ export default {
         return new Response(osaiiIcon, {
           headers: {
             "content-type": "image/png",
-            "cache-control": "public, max-age=86400",
+            "cache-control": "public, max-age=86400, s-maxage=31536000, stale-while-revalidate=86400",
+            "netlify-cdn-cache-control": "public, max-age=31536000, s-maxage=31536000, durable",
+            "cdn-cache-control": "public, max-age=86400, stale-while-revalidate=86400",
             "x-content-type-options": "nosniff",
           },
         });
@@ -179,6 +310,38 @@ export default {
           headers: {
             "content-type": "text/plain; charset=utf-8",
             "content-disposition": "inline; filename=cosaii.ps1",
+            "cache-control": "no-store",
+          },
+        });
+      if (method === "GET" && (url.pathname === "/install/fullplatform.sh" || url.pathname === "/install/fullplatform.sh.txt"))
+        return new Response(fullplatformShellInstaller(), {
+          headers: {
+            "content-type": "text/x-shellscript; charset=utf-8",
+            "content-disposition": "inline; filename=fullplatform.sh",
+            "cache-control": "no-store",
+          },
+        });
+      if (method === "GET" && url.pathname === "/install/fullplatform.ps1")
+        return new Response(fullplatformPowerShellInstaller(), {
+          headers: {
+            "content-type": "text/plain; charset=utf-8",
+            "content-disposition": "inline; filename=fullplatform.ps1",
+            "cache-control": "no-store",
+          },
+        });
+      if (method === "GET" && (url.pathname === "/install/mythos.sh" || url.pathname === "/install/mythos.sh.txt"))
+        return new Response(mythosShellInstaller(), {
+          headers: {
+            "content-type": "text/x-shellscript; charset=utf-8",
+            "content-disposition": "inline; filename=mythos.sh",
+            "cache-control": "no-store",
+          },
+        });
+      if (method === "GET" && url.pathname === "/install/mythos.ps1")
+        return new Response(mythosPowerShellInstaller(), {
+          headers: {
+            "content-type": "text/plain; charset=utf-8",
+            "content-disposition": "inline; filename=mythos.ps1",
             "cache-control": "no-store",
           },
         });
@@ -251,10 +414,10 @@ export default {
         if (method === "OPTIONS")
           return new Response(null, { status: 204, headers: apiCorsHeaders() });
         const apiAccountId = await accountForApiKey(request, env.DB);
-        if (apiAccountId) await trackApiRequest(env.DB, apiAccountId, request);
-        else await trackAnonymousRequest(env.DB, request);
-        const model = await rateLimitModel(request);
-        const fastMode = await rateLimitFastMode(request);
+        // fire-and-forget tracking: don't block hot path
+        if (apiAccountId) ctx.waitUntil(trackApiRequest(env.DB, apiAccountId, request).catch(() => {}));
+        else ctx.waitUntil(trackAnonymousRequest(env.DB, request).catch(() => {}));
+        const { model, fastMode } = await parseRateLimitMeta(request);
         const limited = rateLimit(request, model, apiAccountId, fastMode);
         if (limited) return limited;
         if (method === "GET" && url.pathname === "/api/v1/models")
@@ -356,14 +519,14 @@ export default {
             "content-type": "text/html; charset=utf-8",
             "cache-control": "no-store",
             "x-frame-options": "DENY",
-          });
+          }, request);
         const masqueEmbed = url.pathname.match(/^\/masque\/embed\/([A-Za-z0-9_-]{20,64})$/);
         if (masqueEmbed)
           return html(masqueEmbedPage(masqueEmbed[1]), {
             "content-type": "text/html; charset=utf-8",
             "cache-control": "no-store",
             "content-security-policy": "default-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; frame-ancestors *",
-          });
+          }, request);
         if (url.pathname === "/masque/manifest.webmanifest")
           return new Response(masqueManifest(), {
             headers: {
@@ -384,18 +547,18 @@ export default {
             "content-type": "text/html; charset=utf-8",
             "cache-control": "no-store",
             "permissions-policy": "camera=(), microphone=(), geolocation=()",
-          });
+          }, request);
         if (url.pathname === "/masque")
           return html(masquePage(), {
             "content-type": "text/html; charset=utf-8",
             "cache-control": "no-store",
             "permissions-policy": "camera=(), microphone=(self), geolocation=()",
-          });
+          }, request);
         if (url.pathname === "/studio/oauth/callback")
           return html(oauthCallbackPage(), {
             "content-type": "text/html; charset=utf-8",
             "cache-control": "no-store",
-          });
+          }, request);
         if (url.pathname === "/studio/new/manifest.webmanifest")
           return new Response(studioManifest(), {
             headers: {
@@ -417,61 +580,65 @@ export default {
             "cache-control": "no-store",
             "permissions-policy":
               "camera=(self), microphone=(self), display-capture=(self), geolocation=()",
-          });
-        if (url.pathname === "/studio/preview/a")
+          }, request);
+        // Preview f: T3 clone + Font Preview. Feature-flagged via PREVIEW_F (default on).
+        // Serve /studio/preview, /studio/preview/a, and /studio/preview/* via same studioT3Page.
+        // CSP allows Google Fonts + CDN scripts, isolates preview; Permissions-Policy mirrors studio/new but adds font-access handling.
+        if (
+          url.pathname === "/studio/preview" ||
+          url.pathname === "/studio/preview/a" ||
+          url.pathname.startsWith("/studio/preview/")
+        ) {
+          // Gate via PREVIEW_F: "0" or "false" disables. Otherwise allow (keeps contract green).
+          if (env.PREVIEW_F === "0" || env.PREVIEW_F === "false") {
+            return json({ error: "preview_disabled", message: "Preview f is disabled via PREVIEW_F." }, 404);
+          }
           return html(studioT3Page(), {
             "content-type": "text/html; charset=utf-8",
             "cache-control": "no-store",
             "permissions-policy":
-              "camera=(self), microphone=(self), display-capture=(self), geolocation=()",
-          });
+              "camera=(self), microphone=(self), display-capture=(self), geolocation=(), browsing-topics=()",
+            "content-security-policy":
+              "default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://fonts.googleapis.com https://fonts.gstatic.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://fonts.gstatic.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https:; connect-src 'self' https:; frame-src 'self' blob: https:; base-uri 'none'; form-action 'self'",
+            "cross-origin-opener-policy": "same-origin",
+            "cross-origin-resource-policy": "cross-origin",
+            "referrer-policy": "strict-origin-when-cross-origin",
+            "x-content-type-options": "nosniff",
+          }, request);
+        }
         if (url.pathname === "/platform/cli/authorize")
           return cosaiiAuthorizePage(request, env.DB);
         if (url.pathname === "/mythos/release.json")
           return new Response(JSON.stringify(MYTHOS_RELEASE), {
             headers: {
               ...JSON_HEADERS,
-              "cache-control": "public, max-age=300, stale-while-revalidate=3600",
+              "cache-control": "public, max-age=300, s-maxage=3600, stale-while-revalidate=3600",
+              "netlify-cdn-cache-control": "public, max-age=3600, s-maxage=31536000, durable",
+              "cdn-cache-control": "public, max-age=3600, stale-while-revalidate=3600",
             },
           });
         if (url.pathname === "/mythos")
-          return html(mythosPage(), {
+          return html(getMythosHtml(), {
             "content-type": "text/html; charset=utf-8",
-            "cache-control": "public, max-age=300, stale-while-revalidate=1800",
-          });
+            "cache-control": "public, max-age=300, s-maxage=3600, stale-while-revalidate=1800",
+            "netlify-cdn-cache-control": "public, max-age=3600, s-maxage=31536000, durable",
+            "cdn-cache-control": "public, max-age=3600, stale-while-revalidate=1800",
+          }, request);
         if (url.pathname === "/docs") {
-          const docs = docsPage()
-            .replaceAll("Docs · OSS Studio", "Docs · OSAII Platform")
-            .replaceAll("<a class=\"brand\" href=\"/\">OSS <i>Studio</i></a>", "<a class=\"brand\" href=\"/\">OSAII <i>Platform</i></a>")
-            .replaceAll("OSS Studio developer docs", "The OSAII Platform · developer docs")
-            .replaceAll("One OpenAI-compatible gateway for Poolside models, Logfare Advanced models, and the focused OSS Studio workspace.", "The Platform connects a separate OpenAI-compatible API with the focused OSS Studio workspace. They share model access, accounts, safety, and usage.")
-            .replaceAll("<h2>OSS Studio</h2><p class=\"section-intro\">", "<h2>Studio: the hands-on side of the Platform</h2><p class=\"section-intro\">")
-            .replaceAll('<a href="#studio">Studio workspaces</a>', '<a href="#studio">Studio workspaces</a><a href="#mythos">MythOS</a>')
-            .replaceAll("OSS Studio · <a href=\"/\">Platform</a> · <a href=\"/studio/new\">Studio</a> · <a href=\"/api/v1/models\">Models</a>", "OSAII Platform · <a href=\"/api/v1/models\">API</a> · <a href=\"/studio/new\">Studio</a> · <a href=\"/api/v1/models\">Models</a>")
-            .replaceAll("q:'Answer using only the OSS Studio docs. Question: '+q", "q:'Answer only from the OSAII Platform docs below. Never invent URLs, endpoints, model IDs, or capabilities. If the docs do not contain the answer, say so. Known routes: /, /docs, /api/ask, /api/v1/chat/completions, /api/v1/responses, /api/v1/models, /studio/new, /masque, /masque/api/v1, /mythos, /mythos/release.json. Question: '+q")
-            .replaceAll("answer.textContent=text", "answer.textContent=text.replace(/https?:\\/\\/[^\\s)]+/g,url=>{try{const u=new URL(url);const allowed=u.hostname==='osaii.wyvernhub.net'&&['/','/docs','/api/ask','/api/v1/chat/completions','/api/v1/responses','/api/v1/models','/studio/new','/masque','/masque/api/v1','/mythos','/mythos/release.json'].includes(u.pathname);return allowed?url:'[unverified link omitted]'}catch{return '[unverified link omitted]'}})");
-          const mythosDocs = docs.replace(
-            "</main>",
-            `<section id="mythos"><h2>MythOS desktop integration</h2><p class="section-intro">MythOS is a separate desktop operating-system product. It works without an OSAII account or OSAII applications.</p><div class="cards"><div class="card"><strong>Opt-in shortcuts</strong><p>The optional <code>osaii-web-apps</code> System Hub feature adds browser shortcuts for Platform, Studio, and Masque. They are absent by default and removable.</p></div><div class="card"><strong>Separate identity</strong><p>Local users, files, administrator credentials, and diagnostics never become Platform account data. Browser sign-in is explicit.</p></div><div class="card"><strong>Service discovery</strong><p><code>GET /mythos/release.json</code> publishes version, channel, architecture, base, and canonical service routes.</p></div><div class="card"><strong>Release boundary</strong><p>Build validation does not imply broad hardware acceptance. The preview currently targets amd64 PC and Intel Mac boot paths.</p></div></div><p><a href="/mythos">Explore MythOS</a> · <a href="/mythos/release.json">Release metadata</a></p></section></main>`,
-          );
-          const masqueDocs = mythosDocs.replace(
-            "</main>",
-            `<section id="masque"><h2>Masque character platform</h2><p class="section-intro">Masque is a separate 18+ character product that shares OSAII Platform accounts, model infrastructure, safety, usage, and API keys with Studio and the API.</p><div class="code"><code>GET /masque/api/v1/characters?q=detective<br>POST /masque/api/v1/sessions<br>POST /masque/api/v1/sessions/{session_id}/messages</code></div><p>Masque exposes Auto, Fast, and Smart—not the general OpenAI-compatible model catalog. Public API keys use explicit <code>masque:read</code>, <code>masque:chat</code>, <code>masque:write</code>, <code>masque:embed</code>, and <code>masque:webhook</code> scopes. Existing keys begin with no Masque privileges.</p><p>Character resources include revisions, collaborators, remixes, imports, exports, personas, memory, rooms, social actions, reports, embeds, notifications, and aggregate webhooks. Message responses use SSE events named <code>start</code>, <code>delta</code>, <code>finish</code>, and <code>error</code>, with session, message, branch, revision, selected family, finish reason, and usage fields.</p><p><a href="/masque">Open Masque</a> · <a href="/masque/admin">Operator console</a></p></section></main>`,
-          );
-          const cosaiiDocs = masqueDocs.replace(
-            "</main>",
-            `<section id="cosaii"><h2>Cosaii local agent</h2><p class="section-intro">Cosaii (pronounced cozy) is the Platform's local agentic CLI. A persistent Rust <code>cosaii-app-server</code> owns sessions, tools, permissions, encrypted local persistence, and remote attachment; the OpenTUI client only renders state and sends actions.</p><div class="cards"><div class="card"><strong>Install</strong><p><code>curl -fsSL https://osaii.wyvernhub.net/install/cosaii.sh | sh</code><br>PowerShell: <code>irm https://osaii.wyvernhub.net/install/cosaii.ps1 | iex</code></p></div><div class="card"><strong>Browser login</strong><p>Run <code>cosaii login</code>. The CLI opens the normal Platform authorization page and polls a ten-minute device grant; no localhost callback is opened.</p></div><div class="card"><strong>Local sessions</strong><p>Threads, turns, items, search indexes, snapshots, and audit records stay in the app-server's encrypted SQLite store and are not synchronized into Studio transcripts.</p></div><div class="card"><strong>Permissions</strong><p>Deny All, Allow Low-Risk, Always Ask, and Full Access can be set globally or per canonical workspace. Full Access retains ask rules for destructive and sensitive actions.</p></div></div><pre>cosaii                         # open the TUI\ncosaii run "fix the failing tests" --format jsonl\ncosaii session list\ncosaii daemon status\ncosaii remote enable</pre><p>The versioned JSON-RPC protocol begins with <code>initialize</code> and supports thread, turn, item, account, permission, filesystem, command, MCP, skills, Platform, and remote-control methods. Local transport is WebSocket-framed RPC over a user-only Unix socket or Windows named pipe; embedding uses JSON-RPC over stdio.</p><p>Cloud endpoints are scoped under <code>/platform/api/cli/*</code> and <code>/cosaii/api/v1/*</code>. These require CLI bearer tokens and are not additions to the public OpenAI model list. The encrypted relay transports opaque ciphertext only.</p></section></main>`,
-          );
-          return html(cosaiiDocs, {
+          return html(getDocsHtml(), {
             "content-type": "text/html; charset=utf-8",
-            "cache-control": "public, max-age=300, stale-while-revalidate=1800",
-          });
+            "cache-control": "public, max-age=300, s-maxage=3600, stale-while-revalidate=1800",
+            "netlify-cdn-cache-control": "public, max-age=3600, s-maxage=31536000, durable",
+            "cdn-cache-control": "public, max-age=3600, stale-while-revalidate=1800",
+          }, request);
         }
         if (url.pathname === "/products")
-          return html(productsPage(), {
+          return html(getProductsHtml(), {
             "content-type": "text/html; charset=utf-8",
-            "cache-control": "public, max-age=300, stale-while-revalidate=1800",
-          });
+            "cache-control": "public, max-age=300, s-maxage=3600, stale-while-revalidate=1800",
+            "netlify-cdn-cache-control": "public, max-age=3600, s-maxage=31536000, durable",
+            "cdn-cache-control": "public, max-age=3600, stale-while-revalidate=1800",
+          }, request);
         if (
           url.pathname === "/studio" ||
           url.pathname.startsWith("/studio/site/")
@@ -479,30 +646,15 @@ export default {
           return html(appPage(), {
             "content-type": "text/html; charset=utf-8",
             "cache-control": "no-store",
-          });
+          }, request);
         if (url.pathname === "/chat") return redirect("/studio");
         if (url.pathname === "/") {
-          const umbrella = platformPage()
-            .replaceAll("Open-source AI, ready to build", "The OSAII Platform")
-            .replaceAll("Serious models.<br><em>Open</em> platform.", "One platform.<br><em>Two ways</em> to build.")
-            .replaceAll("OSAII gives builders one OpenAI-compatible endpoint, clear model access, and a workspace for work that needs more than a chat box.", "OSAII Platform brings together the API and OSS Studio. They share models, accounts, safety, and usage while staying separate so you can call AI from code or work directly in a focused workspace.")
-            .replaceAll('href="/studio">Open Studio', 'href="/studio/new">Open Studio')
-            .replaceAll('href="/studio">Studio', 'href="/studio/new">Studio')
-            .replaceAll('<a href="/catalog">Certified models</a>', '<a href="/products">Products</a><a href="/docs">Docs</a>')
-            .replaceAll("<b>One endpoint</b><span>OpenAI-compatible chat and responses</span>", "<b>One platform</b><span>Shared models, accounts, safety, and usage</span>")
-            .replaceAll("<b>Your key</b><span>Named, revocable credentials per account</span>", "<b>Two surfaces</b><span>API for code · Studio for focused work</span>")
-            .replaceAll("<b>Open standard</b><span>Certification and platform, side by side</span>", "<b>Open standard</b><span>Build once, move between both</span>")
-            .replaceAll("Build without translation.", "Choose your way in.")
-            .replaceAll("Start with familiar client code. Choose models, keep credentials under your control.", "API and Studio are distinct products inside one Platform. Start wherever the work starts, then move between them without changing your model access.")
-            .replaceAll("<b>03 / Workspace</b><h3>Move to Studio</h3><p>Use Chat, Agent, Agent Swarm when prompt work becomes project work.</p>", "<b>03 / Symbiotic</b><h3>One Platform, no lock-in</h3><p>The same catalog, safety boundary, account, and usage view connect your first prompt to a production integration.</p>")
-            .replaceAll("Create key, test endpoint, start shipping.", "Create a key for code, or open Studio for hands-on work.")
-            .replaceAll("function open(){modal.classList.add('open')", "function openModal(){modal.classList.add('open')")
-            .replaceAll("b.onclick=open);", "b.onclick=openModal);")
-            .replace("</body>", "<script>for(const id of ['accountButton','heroKey','stripKey']){const button=document.getElementById(id);if(button)button.addEventListener('click',()=>document.getElementById('modal')?.classList.add('open'))}</script></body>");
-          return html(umbrella, {
+          return html(getUmbrella(), {
             "content-type": "text/html; charset=utf-8",
-            "cache-control": "no-store",
-          });
+            "cache-control": "public, max-age=300, s-maxage=3600, stale-while-revalidate=86400",
+            "netlify-cdn-cache-control": "public, max-age=3600, s-maxage=31536000, durable",
+            "cdn-cache-control": "public, max-age=3600, stale-while-revalidate=86400",
+          }, request);
         }
         if (url.pathname === "/initiative")
           return html(
@@ -512,16 +664,14 @@ export default {
                 catalogClient +
                 'renderCatalog(document.getElementById("catalog-preview"), 3);',
             }),
-            HTML_HEADERS,
-          );
+            HTML_HEADERS, request);
         if (url.pathname === "/submit")
           return html(
             layout(submitPage(), {
               title: "Submit a model",
               script: submitClient,
             }),
-            HTML_HEADERS,
-          );
+            HTML_HEADERS, request);
         if (url.pathname === "/catalog")
           return html(
             layout(catalogPage(), {
@@ -530,16 +680,14 @@ export default {
                 catalogClient +
                 'renderCatalog(document.getElementById("catalog-list"));',
             }),
-            HTML_HEADERS,
-          );
+            HTML_HEADERS, request);
         if (url.pathname === "/signin")
           return html(
             layout(signinPage(), {
               title: "Auditor sign in",
               script: authClient,
             }),
-            HTML_HEADERS,
-          );
+            HTML_HEADERS, request);
         if (url.pathname === "/signup" || url.pathname.startsWith("/signup/")) {
           const code =
             url.searchParams.get("code") ??
@@ -550,16 +698,14 @@ export default {
               title: "Auditor sign up",
               script: valid ? authClient : "",
             }),
-            HTML_HEADERS,
-          );
+            HTML_HEADERS, request);
         }
         if (url.pathname === "/audit") {
           const auditor = await currentAuditor(request, env.DB);
           if (!auditor) return redirect("/signin");
           return html(
             layout(auditPage(), { title: "Audit queue", script: auditClient }),
-            HTML_HEADERS,
-          );
+            HTML_HEADERS, request);
         }
         if (url.pathname === "/api/catalog") return catalogHandler(env.DB);
         if (url.pathname === "/api/auth/session") {
@@ -620,8 +766,17 @@ export default {
   },
 };
 
-function html(body: string, headers: Record<string, string>): Response {
+function html(body: string, headers: Record<string, string>, request?: Request): Response {
+  if (request && isNetlifyPreviewRequest(request)) {
+    const bannerBody = withPreviewBanner(body, request);
+    const previewedHeaders = previewHeaders(request, headers);
+    // Avoid double-injection if caller already handled preview
+    if (bannerBody !== body || previewedHeaders !== headers) return new Response(bannerBody, { headers: previewedHeaders });
+  }
   return new Response(body, { headers });
+}
+function htmlPreview(request: Request, body: string, headers: Record<string, string>): Response {
+  return html(withPreviewBanner(body, request), previewHeaders(request, headers), request);
 }
 
 function json(
@@ -682,8 +837,8 @@ async function askEndpoint(
     );
 
   const accountId = await accountForApiKey(request, env.DB);
-  if (accountId) await trackApiRequest(env.DB, accountId, request);
-  else await trackAnonymousRequest(env.DB, request);
+  if (accountId) ctx.waitUntil(trackApiRequest(env.DB, accountId, request).catch(() => {}));
+  else ctx.waitUntil(trackAnonymousRequest(env.DB, request).catch(() => {}));
   const limited = rateLimit(request, model, accountId);
   if (limited) return limited;
 
@@ -1023,7 +1178,9 @@ async function labelHandler(
 async function catalogHandler(db: D1Database): Promise<Response> {
   const submissions = await listCatalog(db);
   return json({ models: submissions.map(toApiSubmission) }, 200, {
-    "cache-control": "public, max-age=300",
+    "cache-control": "public, max-age=300, s-maxage=600, stale-while-revalidate=600",
+    "netlify-cdn-cache-control": "public, max-age=600, durable",
+    "cdn-cache-control": "public, max-age=600, stale-while-revalidate=600",
     "content-type": "application/json; charset=utf-8",
   });
 }

@@ -7,18 +7,63 @@ const IMAGE_MODEL = "gpt-image-2";
 const ALLOWED_ORIGIN = "https://osaii.wyvernhub.net";
 let versionPromise: Promise<string> | undefined;
 
-const cors = (headers = new Headers()) => {
-  headers.set("access-control-allow-origin", ALLOWED_ORIGIN);
+// ── Preview-aware CORS ──
+// OSAII Studio Preview f uses Netlify Deploy Previews (deploy-preview--*.netlify.app).
+// CODEX_ADAPTER_URL points at the Netlify adapter; in previews it is the deploy URL
+// (see wrangler.jsonc vars.CODEX_ADAPTER_URL + netlify.toml [context.deploy-preview.environment]).
+// We must allow the preview origin for in-app studio preview iframes / fetch.
+// Detect via Origin *.netlify.app, localhost, x-nf-preview, or Netlify env CONTEXT.
+function isPreviewOrigin(origin: string | null): boolean {
+  if (!origin) return false;
+  if (origin === ALLOWED_ORIGIN) return true;
+  try {
+    const u = new URL(origin);
+    if (u.hostname === "localhost" || u.hostname === "127.0.0.1") return true;
+    if (u.hostname.endsWith(".netlify.app")) return true;
+    if (u.hostname.endsWith(".netlify.com")) return true;
+    if (u.hostname === "osaii.wyvernhub.net") return true;
+    if (u.hostname.endsWith(".osaii.wyvernhub.net")) return true;
+  } catch { /* ignore */ }
+  return false;
+}
+function resolveAllowedOrigin(request?: Request | null): string {
+  const origin = request?.headers.get("origin") || "";
+  if (origin && isPreviewOrigin(origin)) return origin;
+  // Fallback: allow referer-based preview detection when Origin missing (e.g., image <img>)
+  const referer = request?.headers.get("referer") || "";
+  if (referer) try { const u = new URL(referer); if (u.hostname.endsWith(".netlify.app")) return new URL(referer).origin; } catch {}
+  return ALLOWED_ORIGIN;
+}
+const cors = (request?: Request | null, headers = new Headers()) => {
+  const allowed = resolveAllowedOrigin(request);
+  headers.set("access-control-allow-origin", allowed);
+  headers.set("vary", "Origin");
   headers.set("access-control-allow-headers", "authorization, chatgpt-account-id, content-type");
   headers.set("access-control-allow-methods", "GET, POST, OPTIONS");
+  headers.set("access-control-allow-credentials", "true");
   headers.set("cache-control", "no-store");
   headers.set("x-content-type-options", "nosniff");
+  // Netlify Deploy Preview signal: propagate so client can show preview banner
+  // X-Nf-Preview / X-Nf-Deploy-Context are set by Netlify's CDN for preview deploys.
+  // Also surface via CODEX_ADAPTER_URL check (Worker env) for observability.
+  try {
+    const previewHeader = request?.headers.get("x-nf-deploy-context") || request?.headers.get("x-nf-preview") || request?.headers.get("x-netlify-context");
+    if (previewHeader) headers.set("x-preview-context", previewHeader);
+    const host = request ? new URL(request.url).hostname : "";
+    if (host.includes("deploy-preview--") || (host.includes("--") && host.endsWith(".netlify.app"))) headers.set("x-netlify-preview", "true");
+    // Netlify Functions env (NETLIFY / CONTEXT) — not available in all runtimes, probe safely
+    const netlifyGlobal = (globalThis as any).Netlify;
+    const envPreview = (typeof process !== "undefined" && (process as any).env?.NETLIFY_PREVIEW === "true") ||
+      (typeof process !== "undefined" && (process as any).env?.CONTEXT === "deploy-preview") ||
+      (netlifyGlobal?.env?.get?.("NETLIFY_PREVIEW") === "true");
+    if (envPreview) headers.set("x-netlify-env", "preview");
+  } catch {}
   return headers;
 };
 
-const json = (value: unknown, status = 200) => new Response(JSON.stringify(value), {
+const json = (value: unknown, status = 200, request?: Request | null) => new Response(JSON.stringify(value), {
   status,
-  headers: cors(new Headers({ "content-type": "application/json; charset=utf-8" })),
+  headers: cors(request, new Headers({ "content-type": "application/json; charset=utf-8" })),
 });
 
 async function codexVersion() {
@@ -129,7 +174,7 @@ async function chat(request: Request, body: any) {
       id: `chatcmpl_${crypto.randomUUID()}`, object: "chat.completion", created: Math.floor(Date.now() / 1000), model,
       choices: [{ index: 0, message: { role: "assistant", content: result.text || null, tool_calls: calls.length ? calls : undefined }, finish_reason: result.finishReason === "tool-calls" ? "tool_calls" : "stop" }],
       usage: result.usage,
-    });
+    }, 200, request);
   }
   const id = `chatcmpl_${crypto.randomUUID()}`;
   const result = streamText(options);
@@ -152,7 +197,7 @@ async function chat(request: Request, body: any) {
     }
     controller.enqueue(new TextEncoder().encode("data: [DONE]\n\n")); controller.close();
   } });
-  return new Response(stream, { headers: cors(new Headers({ "content-type": "text/event-stream; charset=utf-8", "x-accel-buffering": "no" })) });
+  return new Response(stream, { headers: cors(request, new Headers({ "content-type": "text/event-stream; charset=utf-8", "x-accel-buffering": "no" })) });
 }
 
 async function models(request: Request) {
@@ -172,34 +217,34 @@ async function models(request: Request) {
     upstream_status: upstream.status,
     edge_challenge: upstream.headers.get("cf-mitigated") === "challenge" || upstreamText.includes("Enable JavaScript and cookies"),
     upstream_content_type: upstream.headers.get("content-type"),
-  } }, upstream.status);
+  } }, upstream.status, request);
   const data = (Array.isArray(raw.models) ? raw.models : []).filter((item: any) => item?.slug && item.supported_in_api !== false && (!item.visibility || item.visibility === "list")).map((item: any) => ({ id: item.slug, object: "model", owned_by: "codex-oauth", name: item.display_name, capabilities: item }));
   if (!data.some((item: any) => item.id === IMAGE_MODEL)) data.push({ id: IMAGE_MODEL, object: "model", owned_by: "codex-oauth", name: "GPT Image 2" });
-  return json({ object: "list", data });
+  return json({ object: "list", data }, 200, request);
 }
 
 async function images(request: Request, body: any) {
   const openai = await provider(request);
   const prompt = typeof body.prompt === "string" ? body.prompt.trim() : "";
-  if (!prompt) return json({ error: { message: "Image prompt is required.", code: "missing_prompt" } }, 400);
+  if (!prompt) return json({ error: { message: "Image prompt is required.", code: "missing_prompt" } }, 400, request);
   const result = await generateImage({ model: openai.image(typeof body.model === "string" ? body.model : IMAGE_MODEL), prompt, n: 1, abortSignal: request.signal });
-  return json({ created: Math.floor(Date.now() / 1000), data: result.images.map(image => ({ b64_json: image.base64 })) });
+  return json({ created: Math.floor(Date.now() / 1000), data: result.images.map(image => ({ b64_json: image.base64 })) }, 200, request);
 }
 
 export default async (request: Request) => {
-  if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: cors() });
-  if (!/^Bearer\s+\S+$/i.test(request.headers.get("authorization") || "") || !request.headers.get("chatgpt-account-id")) return json({ error: { message: "ChatGPT sign-in is required.", code: "chatgpt_sign_in_required" } }, 401);
+  if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: cors(request) });
+  if (!/^Bearer\s+\S+$/i.test(request.headers.get("authorization") || "") || !request.headers.get("chatgpt-account-id")) return json({ error: { message: "ChatGPT sign-in is required.", code: "chatgpt_sign_in_required" } }, 401, request);
   const path = new URL(request.url).pathname;
   try {
     if (path === "/v1/models" && request.method === "GET") return models(request);
-    if (request.method !== "POST") return json({ error: { message: "Method not allowed." } }, 405);
+    if (request.method !== "POST") return json({ error: { message: "Method not allowed." } }, 405, request);
     const body = await request.json().catch(() => null);
-    if (!body || typeof body !== "object" || Array.isArray(body)) return json({ error: { message: "A JSON object is required." } }, 400);
+    if (!body || typeof body !== "object" || Array.isArray(body)) return json({ error: { message: "A JSON object is required." } }, 400, request);
     if (path === "/v1/chat/completions") return chat(request, body);
     if (path === "/v1/images/generations") return images(request, body);
-    return json({ error: { message: "Not found." } }, 404);
+    return json({ error: { message: "Not found." } }, 404, request);
   } catch (error) {
-    return json({ error: { message: error instanceof Error ? error.message : "Codex request failed.", type: "upstream_error", code: "codex_adapter_error" } }, 502);
+    return json({ error: { message: error instanceof Error ? error.message : "Codex request failed.", type: "upstream_error", code: "codex_adapter_error" } }, 502, request);
   }
 };
 

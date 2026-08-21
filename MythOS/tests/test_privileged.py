@@ -1,3 +1,4 @@
+from pathlib import Path
 from types import SimpleNamespace
 import xml.etree.ElementTree as ET
 
@@ -5,6 +6,19 @@ import pytest
 
 from mythos.privileged import action_for, authorize_sender, execute
 from mythos.util import MythOSError
+
+
+def _policy_path() -> Path:
+    # Be robust to pytest CWD: try repo-relative then file-relative.
+    candidates = [
+        Path("data/polkit/org.mythos.control.policy"),
+        Path(__file__).resolve().parents[1] / "data/polkit/org.mythos.control.policy",
+        Path(__file__).resolve().parents[2] / "MythOS/data/polkit/org.mythos.control.policy",
+    ]
+    for path in candidates:
+        if path.is_file():
+            return path
+    return candidates[0]
 
 
 def test_operations_use_distinct_polkit_actions() -> None:
@@ -15,7 +29,7 @@ def test_operations_use_distinct_polkit_actions() -> None:
 
 
 def test_every_feature_has_a_polkit_action() -> None:
-    root = ET.parse("data/polkit/org.mythos.control.policy").getroot()
+    root = ET.parse(_policy_path()).getroot()
     action_ids = {action.attrib["id"] for action in root.findall("action")}
     for feature in ("windows-apps", "gaming", "appimages", "macos-apps", "local-ai", "osaii-web-apps", "backup-plus", "developer", "virtualization", "native-packages", "snap"):
         assert f"org.mythos.control.feature-{feature}" in action_ids

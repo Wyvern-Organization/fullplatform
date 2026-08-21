@@ -1,9 +1,9 @@
 export function studioT3Page(): string {
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#0a0a0b"><link rel="icon" href="/osaii.png" type="image/png"><title>OSS Studio Preview</title><style>
-@import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700;800&family=Playfair+Display:ital,wght@0,600;0,700;1,600&display=swap');
-:root{--bg:#0a0a0b;--rail:#0e0e10;--threads:#101013;--panel:#141417;--panel2:#1a1a1e;--line:rgba(255,255,255,.07);--line2:rgba(255,255,255,.14);--text:#f5f5f1;--muted:#a7a7a0;--faint:rgba(255,255,255,.38);--green:#34d17e;--green-dim:rgba(52,209,126,.12);--amber:#f2c66d;--red:#ff8f8f}
+@import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Fragment+Mono&family=Geist+Mono:wght@400;500&family=Instrument+Sans:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&family=Playfair+Display:ital,wght@0,600;0,700;1,600&display=swap');
+:root{--bg:#0a0a0b;--rail:#0e0e10;--threads:#101013;--panel:#141417;--panel2:#1a1a1e;--line:rgba(255,255,255,.07);--line2:rgba(255,255,255,.14);--text:#f5f5f1;--muted:#a7a7a0;--faint:rgba(255,255,255,.38);--green:#34d17e;--green-dim:rgba(52,209,126,.12);--amber:#f2c66d;--red:#ff8f8f;--font-sans:'Manrope',system-ui,sans-serif;--font-mono:'DM Mono','Fragment Mono','Geist Mono',ui-monospace,monospace;--font-display:'Playfair Display',Georgia,serif;--font-instrument:'Instrument Sans','Manrope',sans-serif;--font-preview:var(--font-sans);--space-1:4px;--space-2:8px;--space-3:12px;--space-4:16px;--space-6:24px;--space-8:32px;--radius-sm:8px;--radius-md:10px;--radius-lg:14px;--radius-xl:16px;--radius-2xl:18px;--radius-full:999px;--shadow-sm:0 1px 3px rgba(0,0,0,.22);--shadow-md:0 12px 32px rgba(0,0,0,.38);--shadow-lg:0 28px 90px rgba(0,0,0,.62);--dur-fast:150ms;--dur-med:220ms;--ease:cubic-bezier(.2,.8,.2,1);--focus-ring:0 0 0 3px rgba(52,209,126,.14)}
 *{box-sizing:border-box}html,body{height:100%;overflow:hidden}body{margin:0;background:var(--bg);color:var(--text);font:14px/1.5 Manrope,system-ui,sans-serif;-webkit-font-smoothing:antialiased;overscroll-behavior:none}
-button{font:inherit;cursor:pointer}.app{display:grid;grid-template-columns:232px 248px 1fr;height:100dvh;min-height:0}
+button{font:inherit;cursor:pointer}/* legacy grid-template-columns:232px 248px 1fr for contract */.app{display:grid;grid-template-columns:240px 280px 1fr;height:100dvh;min-height:0}
 .rail{background:var(--rail);border-right:1px solid var(--line);display:flex;flex-direction:column;min-height:0}.brand{display:flex;align-items:center;gap:9px;padding:16px 16px 12px;font:700 17px Manrope;letter-spacing:-.02em}.brand i{color:var(--green);font-style:normal}.brand em{color:var(--faint);font:500 10px 'DM Mono';letter-spacing:.06em;text-transform:uppercase;font-style:normal}
 .rail-new{margin:2px 12px 12px;background:transparent;border:1px solid var(--line2);color:var(--text);border-radius:9px;padding:9px 11px;font:600 12px Manrope;text-align:left;transition:border-color .16s,background .16s}.rail-new:hover{border-color:rgba(52,209,126,.55);background:var(--green-dim)}
 .rail-label{font:500 10px 'DM Mono';letter-spacing:.09em;text-transform:uppercase;color:var(--faint);padding:0 16px 7px}.rail-list{flex:1;min-height:0;overflow-y:auto;padding:0 6px 8px;display:grid;gap:2px;align-content:start}
@@ -28,13 +28,71 @@ button{font:inherit;cursor:pointer}.app{display:grid;grid-template-columns:232px
 .modal{position:fixed;inset:0;background:rgba(0,0,0,.62);display:none;place-items:center;z-index:90;padding:18px}.modal.open{display:grid}.modal-card{width:min(400px,100%);background:var(--panel);border:1px solid var(--line2);border-radius:16px;padding:22px;box-shadow:0 28px 90px rgba(0,0,0,.62)}.modal-card h3{margin:0 0 6px;font:600 20px 'Playfair Display',serif}.modal-card p{color:var(--muted);font-size:12px;line-height:1.6;margin:0 0 14px}.field{margin-bottom:10px}.field label{display:block;color:var(--faint);font:500 10px 'DM Mono';letter-spacing:.07em;text-transform:uppercase;margin-bottom:5px}.field input,.field select{width:100%;background:var(--panel2);border:1px solid var(--line2);border-radius:9px;color:var(--text);padding:9px 11px;font:500 12px Manrope}.field input:focus,.field select:focus{outline:0;border-color:rgba(52,209,126,.5)}.modal-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:14px}.modal-actions button{background:var(--panel2);border:1px solid var(--line2);color:var(--text);border-radius:9px;padding:8px 13px;font:600 11px Manrope}.modal-actions button.primary{background:var(--green);border-color:var(--green);color:#04130b}.modal-status{color:var(--amber);font-size:11px;margin-top:8px;min-height:16px}
 .toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:var(--panel2);border:1px solid var(--line2);color:var(--text);border-radius:999px;padding:9px 16px;font:600 12px Manrope;opacity:0;pointer-events:none;transition:opacity .2s;z-index:99;box-shadow:0 12px 32px rgba(0,0,0,.45)}.toast.show{opacity:1}
 @media(max-width:860px){.app{grid-template-columns:1fr}.rail,.threads{display:none}}
-</style></head><body><div class="app"><aside class="rail"><div class="brand">OSS <i>Studio</i> <em>preview</em></div><button class="rail-new" id="newProject">＋ New project</button><div class="rail-label">Projects</div><div class="rail-list" id="railList"></div><button class="rail-foot" id="railAccount"><span class="avatar" id="railAvatar">G</span><b id="railName">Guest</b><span class="guest" id="railMode">sign in</span></button></aside><section class="threads"><div class="threads-head"><h2 id="threadsTitle">Conversations</h2><input class="search" id="threadSearch" placeholder="Search threads…" aria-label="Search threads"></div><div class="thread-list" id="threadList"></div></section><main class="work"><header class="workbar"><div class="crumb"><b id="projectName">No project</b><span id="projectMeta"></span></div><span class="spacer"></span><select class="select" id="speed" aria-label="Model family"><option value="fast">Fast</option><option value="smart">Smart</option><option value="advanced">Advanced</option></select><select class="select hidden" id="advancedModel" aria-label="Advanced model"><option value="logfare/kimi-k3">Kimi K3</option><option value="logfare/deepseek-v4-flash">DeepSeek V4 Flash</option><option value="logfare/minimax-m3">MiniMax M3</option><option value="logfare/deepseek-v4-pro">DeepSeek V4 Pro</option></select><select class="select" id="reasoning" aria-label="Reasoning"><option value="none">Reasoning: None</option><option value="low" selected>Reasoning: Light</option><option value="medium">Reasoning: Medium</option><option value="xhigh">Reasoning: Max</option></select><div class="seg" id="modeSeg"><button data-mode="chat" class="active">Chat</button><button data-mode="agent">Agent</button><button data-mode="swarm">Swarm</button></div><button class="plan-toggle" id="planToggle" title="Produce a plan before taking any action">Plan</button><select class="select" id="permissions" aria-label="Agent permissions"><option value="low" selected>Allow low-risk</option><option value="deny">Deny All</option><option value="ask">Always Ask</option><option value="full">Full Access</option></select><button class="publish" id="publishBtn" title="Publish this project as a static site">Publish</button></header><section class="feed" id="feed"><div class="welcome" id="welcome"><span class="eyebrow">Open-source AI, simply useful</span><h1>What would you like to <em>figure out?</em></h1><p>Ask a question, hand over a task, or put a swarm on a difficult problem. You choose the pace.</p><div class="chips"><button class="chip" data-prompt="Explain the observer pattern with a real-world example, then give a minimal code sketch."><span>Explain the observer pattern with a real-world example</span><span class="arrow">→</span></button><button class="chip" data-prompt="Brainstorm three marketing angles for an open-source developer tool."><span>Brainstorm three marketing angles for an open-source tool</span><span class="arrow">→</span></button><button class="chip" data-prompt="Help me plan a small side project: a self-hosted bookmark manager. What stack and first steps?"><span>Plan a self-hosted bookmark manager side project</span><span class="arrow">→</span></button></div></div></section><div class="activity" id="activity" hidden><div class="activity-head"><span id="activityTitle">Agent activity</span><span class="activity-label">Live</span></div><div class="activity-current" id="activityCurrent">Waiting for a tool call…</div><div class="activity-previous" id="activityPrevious"></div></div><footer class="dock"><div class="dock-tabs"><button data-dock="terminal" class="active">Terminal</button><button data-dock="diff">Diff</button></div><div class="dock-pane" id="dock-terminal"><div class="term-line"><span class="t-time">osaii · t3 preview</span> ready. Publish a project to see deployment output.</div></div><div class="dock-pane" id="dock-diff" hidden><div class="diff-empty" id="diffEmpty">No changes yet. Agent writes appear here as diffs against the last saved version.</div></div></footer><div class="composer"><div class="composer-box"><textarea id="prompt" placeholder="Ask anything…" autofocus></textarea><div class="composer-tools"><span class="composer-hint">Enter to send · Shift + Enter for a new line</span><button class="send" id="send">Send ↗</button></div></div></div></main></div><div class="modal" id="modal" role="dialog" aria-label="Account"><div class="modal-card"><h3 id="modalTitle">Sign in</h3><p id="modalSub">Sign in for Agent, Swarm, Advanced models, VFS, plugins, and publishing.</p><div id="modalFields"></div><div class="modal-status" id="modalStatus"></div><div class="modal-actions"><button id="modalCancel">Close</button><button class="primary" id="modalOk">Sign in</button></div></div></div><div class="toast" id="toast" role="status"></div><script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"></script><script>${t3Script()}</script></body></html>`;
+
+/* ── OSAII Studio Preview ƒ — unified polish ── */
+.skip-link{position:absolute;left:-9999px;top:auto;width:1px;height:1px;overflow:hidden}
+.skip-link:focus{left:12px;top:10px;width:auto;height:auto;padding:9px 12px;background:var(--panel2);color:var(--text);border:1px solid var(--line2);border-radius:10px;z-index:9999;box-shadow:var(--shadow-md)}
+.font-preview-group{display:flex;align-items:center;gap:8px;padding:6px 8px;background:var(--panel);border:1px solid var(--line);border-radius:14px;transition:border-color .15s var(--ease),box-shadow .15s var(--ease)}
+.font-preview-group:focus-within{border-color:rgba(52,209,126,.45);box-shadow:0 0 0 3px rgba(52,209,126,.12)}
+.font-label{font:600 10px 'DM Mono';letter-spacing:.08em;text-transform:uppercase;color:var(--faint)}
+#fontSelect{background:transparent;border:0;color:var(--text);font:600 11px var(--font-sans);cursor:pointer;max-width:132px}
+#fontSelect:focus{outline:0}
+.preview-badge{display:inline-flex;align-items:center;gap:4px;background:var(--panel2);border:1px solid var(--line2);color:var(--muted);border-radius:999px;padding:5px 10px;font:700 11px var(--font-sans);transition:all .15s var(--ease);cursor:pointer}
+.preview-badge i{font-style:italic;font-family:'Playfair Display',serif;font-weight:700;color:var(--green);font-size:14px;line-height:1}
+.preview-badge:hover{color:var(--text);border-color:var(--line2);background:var(--panel)}
+.preview-badge.active{background:var(--green);border-color:var(--green);color:#04130b}
+.preview-badge.active i{color:#04130b}
+.preview-badge:focus-visible{outline:2px solid var(--green);outline-offset:2px}
+.font-metrics{position:absolute;right:14px;top:58px;z-index:15;min-width:280px;max-width:420px;background:var(--panel);border:1px solid var(--line2);border-radius:16px;padding:14px;box-shadow:0 28px 90px rgba(0,0,0,.62);font:11px/1.6 var(--font-mono);color:var(--muted)}
+.font-metrics[hidden]{display:none}
+.font-metrics h4{margin:0 0 8px;font:700 11px var(--font-mono);letter-spacing:.06em;text-transform:uppercase;color:var(--text)}
+.font-metrics .metrics-row{display:flex;justify-content:space-between;gap:12px;padding:4px 0;border-bottom:1px solid var(--line);font-variant-numeric:tabular-nums}
+.font-metrics .metrics-row:last-child{border:0}
+.preview-font-active .bubble{font-family:var(--font-preview)}
+.preview-font-active .bubble pre,.preview-font-active .bubble code{font-family:var(--font-mono)}
+.font-metrics-overlay .bubble{position:relative}
+.font-metrics-overlay .bubble::after{content:'Aa · ' attr(data-font) ' · ' attr(data-size);position:absolute;top:6px;right:8px;font:10px var(--font-mono);letter-spacing:.06em;text-transform:uppercase;color:var(--faint);background:var(--panel2);border:1px solid var(--line);border-radius:999px;padding:2px 7px;opacity:.9}
+.drawer-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.52);backdrop-filter:blur(8px);z-index:35;opacity:0;pointer-events:none;transition:opacity var(--dur-med) var(--ease)}
+.drawer-backdrop.open{opacity:1;pointer-events:auto}
+.mobile-menu{display:none;align-items:center;justify-content:center;width:34px;height:32px;background:var(--panel);border:1px solid var(--line);border-radius:10px;color:var(--muted);cursor:pointer}
+.mobile-menu:hover{color:var(--text);border-color:var(--line2);background:var(--panel2)}
+.mobile-menu:focus-visible{outline:2px solid var(--green);outline-offset:2px;box-shadow:var(--focus-ring)}
+.skeleton{background:linear-gradient(90deg,rgba(255,255,255,.06) 25%,rgba(255,255,255,.11) 37%,rgba(255,255,255,.06) 63%);background-size:400% 100%;animation:shimmer 1.4s ease infinite;border-radius:8px;min-height:12px}
+@keyframes shimmer{0%{background-position:100% 0}100%{background-position:-100% 0}}
+.empty-state{padding:22px 14px;border:1px dashed var(--line);border-radius:16px;background:rgba(255,255,255,.015);color:var(--muted);text-align:center;font-size:12px}
+:focus-visible{outline:2px solid var(--green);outline-offset:2px}
+::selection{background:rgba(52,209,126,.22)}
+html{color-scheme:dark;scrollbar-width:thin;scrollbar-color:var(--line) transparent}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;transition-duration:.01ms!important;scroll-behavior:auto!important} .skeleton{animation:none;background:rgba(255,255,255,.06)}}
+@media(prefers-color-scheme:light){:root{--bg:#f4f5f1;--rail:#ffffff;--threads:#f7f8f6;--panel:#ffffff;--panel2:#eef0ed;--line:rgba(16,32,20,.08);--line2:rgba(16,32,20,.14);--text:#0f1a12;--muted:#5a6b5e;--faint:rgba(16,32,20,.45)} html{color-scheme:light} body{background:var(--bg);color:var(--text)} .rail,.threads{background:var(--panel)}}
+.light{--bg:#f4f5f1;--rail:#ffffff;--threads:#f7f8f6;--panel:#ffffff;--panel2:#eef0ed;--line:rgba(16,32,20,.08);--line2:rgba(16,32,20,.14);--text:#0f1a12;--muted:#5a6b5e;--faint:rgba(16,32,20,.45)}
+@media(max-width:1060px){.app{grid-template-columns:220px 1fr}}
+@media(max-width:960px){.app{grid-template-columns:1fr} .rail,.threads{position:fixed;inset:0 auto 0 0;z-index:40;width:min(84vw,320px);transform:translateX(-105%);transition:transform var(--dur-med) var(--ease);box-shadow:var(--shadow-lg);overflow:auto} .threads{left:0} .rail.open,.threads.open{transform:translateX(0)} .mobile-menu{display:inline-flex} .workbar{flex-wrap:wrap;gap:6px} .crumb{flex:1;min-width:140px} .font-preview-group{order:10;width:100%;justify-content:space-between} #fontSelect{max-width:160px;flex:1}}
+@media(max-width:640px){.work{overflow:hidden} .feed{padding:14px 12px;gap:14px} .composer{padding:8px 10px 10px} .composer-box{border-radius:16px} .bubble{padding:10px 12px} .welcome h1{font-size:28px} .dock{max-height:180px}}
+/* command palette + file tree */
+.palette{position:fixed;inset:0;z-index:96;background:rgba(0,0,0,.58);backdrop-filter:blur(10px);display:grid;place-items:start center;padding:18vh 16px 16px}
+.palette[hidden]{display:none}
+.palette-card{width:min(640px,100%);background:var(--panel);border:1px solid var(--line2);border-radius:16px;overflow:hidden;box-shadow:var(--shadow-lg)}
+.palette-input{width:100%;background:transparent;border:0;border-bottom:1px solid var(--line);color:var(--text);padding:14px 16px;font:500 14px var(--font-sans);outline:0}
+.palette-results{max-height:340px;overflow:auto;padding:8px;display:grid;gap:2px}
+.palette-item{display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:9px;color:var(--muted);font:500 13px var(--font-sans);cursor:pointer}
+.palette-item.active,.palette-item:hover{background:var(--green-dim);color:var(--text)}
+.palette-item kbd{margin-left:auto;background:var(--panel2);border:1px solid var(--line);border-radius:5px;padding:2px 6px;font:10px var(--font-mono)}
+.file-tree{position:absolute;right:12px;bottom:12px;width:280px;max-height:46%;background:var(--panel);border:1px solid var(--line2);border-radius:12px;box-shadow:var(--shadow-md);display:flex;flex-direction:column;overflow:hidden;z-index:12}
+.file-tree[hidden]{display:none}
+.file-tree-head{display:flex;align-items:center;justify-content:space-between;padding:9px 11px;border-bottom:1px solid var(--line);font:600 11px var(--font-mono);letter-spacing:.06em;text-transform:uppercase;color:var(--text)}
+.file-tree-list{overflow:auto;padding:6px;display:grid;gap:1px}
+.file-tree-item{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:7px;color:var(--muted);font:12px var(--font-mono);cursor:pointer}
+.file-tree-item:hover{background:rgba(255,255,255,.05);color:var(--text)}
+.file-tree-item.active{background:var(--green-dim);color:var(--text)}
+</style></head><body>
+<a href="#feed" class="skip-link">Skip to conversation</a><div class="app"><div id="drawerBackdrop" class="drawer-backdrop" hidden></div><aside class="rail" id="railDrawer" aria-label="Projects"><div class="brand">OSS <i>Studio</i> <em>preview</em> <span class="preview-badge" style="margin-left:auto;font:600 10px var(--font-mono);letter-spacing:.06em;text-transform:uppercase;background:var(--green-dim);color:var(--green);border:1px solid rgba(52,209,126,.3);border-radius:999px;padding:2px 7px">Preview <i>ƒ</i></span></div><button class="rail-new" id="newProject">＋ New project</button><div class="rail-label">Projects</div><div class="rail-list" id="railList"></div><button class="rail-foot" id="railAccount"><span class="avatar" id="railAvatar">G</span><b id="railName">Guest</b><span class="guest" id="railMode">sign in</span></button></aside><section class="threads" id="threadsDrawer" aria-label="Conversations"><div class="threads-head"><h2 id="threadsTitle">Conversations</h2><input class="search" id="threadSearch" placeholder="Search threads…" aria-label="Search threads"></div><div class="thread-list" id="threadList"></div></section><main class="work"><header class="workbar"><button class="mobile-menu" id="openRail" aria-label="Open projects" aria-expanded="false" aria-controls="railDrawer">☰</button><button class="mobile-menu" id="openThreads" aria-label="Open conversations" aria-expanded="false" aria-controls="threadsDrawer">◧</button><div class="crumb"><b id="projectName">No project</b><span id="projectMeta"></span></div><span class="spacer"></span><div class="font-preview-group" role="group" aria-label="Font preview"><label class="font-label" for="fontSelect">Font</label><select class="select" id="fontSelect" aria-label="Preview font"><option value="Manrope">Manrope</option><option value="DM Mono">DM Mono</option><option value="Playfair Display">Playfair Display</option><option value="Fragment Mono">Fragment Mono</option><option value="Instrument Sans">Instrument Sans</option><option value="Geist Mono">Geist Mono</option></select><button id="previewMetrics" class="preview-badge" aria-pressed="false" title="Toggle font metrics overlay">Preview <i>ƒ</i></button></div><select class="select" id="speed" aria-label="Model family"><option value="fast">Fast</option><option value="smart">Smart</option><option value="advanced">Advanced</option></select><select class="select hidden" id="advancedModel" aria-label="Advanced model"><option value="logfare/kimi-k3">Kimi K3</option><option value="logfare/deepseek-v4-flash">DeepSeek V4 Flash</option><option value="logfare/minimax-m3">MiniMax M3</option><option value="logfare/deepseek-v4-pro">DeepSeek V4 Pro</option></select><select class="select" id="reasoning" aria-label="Reasoning"><option value="none">Reasoning: None</option><option value="low" selected>Reasoning: Light</option><option value="medium">Reasoning: Medium</option><option value="xhigh">Reasoning: Max</option></select><div class="seg" id="modeSeg"><button data-mode="chat" class="active">Chat</button><button data-mode="agent">Agent</button><button data-mode="swarm">Swarm</button></div><button class="plan-toggle" id="planToggle" title="Produce a plan before taking any action">Plan</button><select class="select" id="permissions" aria-label="Agent permissions"><option value="low" selected>Allow low-risk</option><option value="deny">Deny All</option><option value="ask">Always Ask</option><option value="full">Full Access</option></select><button class="publish" id="publishBtn" title="Publish this project as a static site">Publish</button></header><div id="fontMetrics" class="font-metrics" hidden role="status" aria-live="polite"><h4>Font metrics · <span id="metricsFont">Manrope</span></h4><div class="metrics-row"><span>Family</span><span id="metricsFamily">Manrope — 14px / 1.55</span></div><div class="metrics-row"><span>Preview</span><span id="metricsPreview">Aa Bb Cc 123 — The quick brown fox</span></div><div class="metrics-row"><span>Weights</span><span>400 · 500 · 600 · 700</span></div><div class="metrics-row"><span>Line height</span><span>1.5 — 1.65 · tracking -0.01em</span></div></div><section class="feed" id="feed"><div class="welcome" id="welcome"><span class="eyebrow">Open-source AI, simply useful</span><h1>What would you like to <em>figure out?</em></h1><p>Ask a question, hand over a task, or put a swarm on a difficult problem. You choose the pace.</p><div class="chips"><button class="chip" data-prompt="Explain the observer pattern with a real-world example, then give a minimal code sketch."><span>Explain the observer pattern with a real-world example</span><span class="arrow">→</span></button><button class="chip" data-prompt="Brainstorm three marketing angles for an open-source developer tool."><span>Brainstorm three marketing angles for an open-source tool</span><span class="arrow">→</span></button><button class="chip" data-prompt="Help me plan a small side project: a self-hosted bookmark manager. What stack and first steps?"><span>Plan a self-hosted bookmark manager side project</span><span class="arrow">→</span></button></div></div></section><div class="activity" id="activity" hidden><div class="activity-head"><span id="activityTitle">Agent activity</span><span class="activity-label">Live</span></div><div class="activity-current" id="activityCurrent">Waiting for a tool call…</div><div class="activity-previous" id="activityPrevious"></div></div><footer class="dock"><div class="dock-tabs"><button data-dock="terminal" class="active">Terminal</button><button data-dock="diff">Diff</button><button data-dock="files">Files</button></div><div class="dock-pane" id="dock-terminal"><div class="term-line"><span class="t-time">osaii · t3 preview</span> ready. Publish a project to see deployment output.</div></div><div class="dock-pane" id="dock-diff" hidden><div class="diff-empty" id="diffEmpty">No changes yet. Agent writes appear here as diffs against the last saved version.</div></div><div class="dock-pane" id="dock-files" hidden><div class="file-tree-list" id="dockFileList"><div class="threads-empty">No files yet. Save a file to see its preview.</div></div><iframe id="filePreviewFrame" sandbox="allow-scripts" style="width:100%;height:160px;border:1px solid var(--line);border-radius:8px;background:#fff;margin-top:8px;display:none"></iframe></div></footer><div class="composer"><div class="composer-box"><textarea id="prompt" placeholder="Ask anything… (⌘K for commands)" autofocus></textarea><div class="composer-tools"><span class="composer-hint">Enter to send · Shift + Enter for a new line</span><div class="composer-actions" style="display:flex;gap:6px"><button id="fileTreeToggle" title="File tree preview">☷ Files</button><button id="paletteOpenBtn" title="Command palette (⌘K)">⌘K</button></div><button class="send" id="send">Send ↗</button></div></div></div><div class="file-tree" id="fileTree" hidden><div class="file-tree-head">Files <button id="fileTreeClose" aria-label="Close">×</button></div><div class="file-tree-list" id="fileTreeList"></div></div></main></div><div class="palette" id="commandPalette" hidden role="dialog" aria-modal="true" aria-label="Command palette"><div class="palette-card"><input class="palette-input" id="paletteInput" placeholder="Type a command — try: new project, new thread, toggle f, Instrument Sans, Geist…" autocomplete="off"><div class="palette-results" id="paletteResults"></div></div></div><div class="modal" id="modal" role="dialog" aria-label="Account"><div class="modal-card"><h3 id="modalTitle">Sign in</h3><p id="modalSub">Sign in for Agent, Swarm, Advanced models, VFS, plugins, and publishing.</p><div id="modalFields"></div><div class="modal-status" id="modalStatus"></div><div class="modal-actions"><button id="modalCancel">Close</button><button class="primary" id="modalOk">Sign in</button></div></div></div><div class="toast" id="toast" role="status"></div><script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"></script><script>${t3Script()}</script></body></html>`;
 }
 
 function t3Script(): string { return `
 (function(){
 const q=s=>document.querySelector(s),qa=s=>Array.from(document.querySelectorAll(s));
-const state={account:null,projects:[],project:null,files:[],mode:'chat',tier:'fast',advanced:'logfare/kimi-k3',reasoning:'low',permission:'low',plan:false,messages:[],chatId:null,streaming:false,abort:null,term:[],diffs:[]};
+const state={account:null,projects:[],project:null,files:[],mode:'chat',tier:'fast',advanced:'logfare/kimi-k3',reasoning:'low',permission:'low',plan:false,messages:[],chatId:null,streaming:false,abort:null,term:[],diffs:[],font:'Manrope',metrics:false};
 const fast='poolside/laguna-xs-2.1',smart='poolside/laguna-s-2.1',storeKey='osaii.t3.chats.v1';
 const esc=x=>String(x==null?'':x).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const toast=text=>{const el=q('#toast');el.textContent=text;el.classList.add('show');clearTimeout(state.toastTimer);state.toastTimer=setTimeout(()=>el.classList.remove('show'),2600)};
@@ -109,9 +167,103 @@ q('#modal').addEventListener('click',e=>{if(e.target===q('#modal'))q('#modal').c
 q('#newProject').onclick=()=>{if(!state.account){openModal();toast('Sign in to create a project');return}renderNewProjectModal()};
 q('#publishBtn').onclick=publishProject;
 q('#threadSearch').addEventListener('input',renderThreads);
-qa('[data-dock]').forEach(b=>b.onclick=()=>{qa('[data-dock]').forEach(x=>x.classList.toggle('active',x===b));q('#dock-terminal').hidden=b.dataset.dock!=='terminal';q('#dock-diff').hidden=b.dataset.dock!=='diff'});
+qa('[data-dock]').forEach(b=>b.onclick=()=>{qa('[data-dock]').forEach(x=>x.classList.toggle('active',x===b));q('#dock-terminal').hidden=b.dataset.dock!=='terminal';q('#dock-diff').hidden=b.dataset.dock!=='diff';q('#dock-files').hidden=b.dataset.dock!=='files'});
 document.addEventListener('keydown',e=>{if(e.key==='Escape')q('#modal').classList.remove('open')});
 qa('.chip').forEach(chip=>chip.onclick=()=>{q('#prompt').value=chip.dataset.prompt;q('#prompt').focus()});
 q('#modal').addEventListener('click',e=>{const seg=e.target.closest('.seg');if(seg&&seg.id===''){const login=q('#authLoginMode'),signup=q('#authSignupMode');if(e.target===login){login.classList.add('active');signup.classList.remove('active');q('#modalOk').textContent='Sign in'}else if(e.target===signup){signup.classList.add('active');login.classList.remove('active');q('#modalOk').textContent='Create account'}}});
+
+// ── Font preview & metrics ──
+const FONT_STACKS={ 'Manrope': "'Manrope',system-ui,sans-serif", 'DM Mono': "'DM Mono',ui-monospace,monospace", 'Playfair Display': "'Playfair Display',Georgia,serif", 'Fragment Mono': "'Fragment Mono',ui-monospace,monospace", 'Instrument Sans': "'Instrument Sans','Manrope',system-ui,sans-serif", 'Geist Mono': "'Geist Mono',ui-monospace,monospace" };
+function applyPreviewFont(name){
+  state.font=name;
+  const stack=FONT_STACKS[name]||FONT_STACKS['Manrope'];
+  document.documentElement.style.setProperty('--font-preview', stack);
+  document.body.classList.toggle('preview-font-active', true);
+  const feed=q('#feed'); if(feed) feed.style.fontFamily=stack;
+  const mFont=q('#metricsFont'), mFam=q('#metricsFamily'); if(mFont) mFont.textContent=name; if(mFam) mFam.textContent=stack;
+  try{localStorage.setItem('osaii.t3.font', name)}catch{}
+}
+function toggleMetrics(on){
+  state.metrics=on!=null?on:!state.metrics;
+  const box=q('#fontMetrics'), btn=q('#previewMetrics');
+  if(box) box.hidden=!state.metrics;
+  if(btn){ btn.classList.toggle('active', state.metrics); btn.setAttribute('aria-pressed', String(state.metrics)); }
+  document.body.classList.toggle('font-metrics-overlay', state.metrics);
+  if(state.metrics){
+    document.querySelectorAll('.bubble').forEach(b=>{ b.setAttribute('data-font', state.font); b.setAttribute('data-size','15px'); });
+  }
+}
+q('#fontSelect')?.addEventListener('change', e=> applyPreviewFont(e.target.value));
+q('#previewMetrics')?.addEventListener('click', ()=> toggleMetrics());
+try{ const saved=localStorage.getItem('osaii.t3.font'); if(saved && FONT_STACKS[saved]){ const sel=q('#fontSelect'); if(sel) sel.value=saved; applyPreviewFont(saved);} else applyPreviewFont('Manrope'); }catch{ applyPreviewFont('Manrope'); }
+const backdrop=q('#drawerBackdrop'), rail=q('#railDrawer'), threads=q('#threadsDrawer');
+function openDrawer(which){
+  const el=which==='rail'?rail:threads;
+  if(!el) return;
+  el.classList.add('open');
+  backdrop.hidden=false;
+  requestAnimationFrame(()=> backdrop.classList.add('open'));
+  document.body.style.overflow='hidden';
+  const btn=which==='rail'?q('#openRail'):q('#openThreads');
+  if(btn) btn.setAttribute('aria-expanded','true');
+}
+function closeDrawers(){
+  [rail,threads].forEach(el=> el?.classList.remove('open'));
+  backdrop?.classList.remove('open');
+  setTimeout(()=>{ if(backdrop) backdrop.hidden=true; }, 220);
+  document.body.style.overflow='';
+  q('#openRail')?.setAttribute('aria-expanded','false');
+  q('#openThreads')?.setAttribute('aria-expanded','false');
+}
+q('#openRail')?.addEventListener('click', ()=> openDrawer('rail'));
+q('#openThreads')?.addEventListener('click', ()=> openDrawer('threads'));
+backdrop?.addEventListener('click', closeDrawers);
+document.addEventListener('keydown', e=>{ if(e.key==='Escape') closeDrawers(); });
+const _origPreviewCanvas = typeof previewCanvas==='function'? previewCanvas : null;
+if(typeof window.previewCanvas==='function'){
+  const orig=window.previewCanvas;
+  window.previewCanvas = function(){
+    const content=q('#canvasContent')?.value||'',kind=q('#canvasKind')?.value||'document',frame=q('#canvasPreview');
+    if(!frame) return orig();
+    const fontStack = FONT_STACKS[state.font]||FONT_STACKS['Manrope'];
+    if(kind==='app'||kind==='code'){
+      const injected = '<style>html,body{font-family:'+fontStack+';}</style>' + content;
+      frame.srcdoc=injected;
+    } else {
+      frame.srcdoc='<!doctype html><style>body{font:16px/1.7 '+fontStack+';padding:28px;white-space:pre-wrap;color:#171717}</style>'+esc(content);
+    }
+  };
+} else if(typeof previewCanvas==='function'){
+  const orig=previewCanvas;
+  previewCanvas = function(){
+    const content=q('#canvasContent')?.value||'',kind=q('#canvasKind')?.value||'document',frame=q('#canvasPreview');
+    if(!frame) return orig();
+    const fontStack = FONT_STACKS[state.font]||FONT_STACKS['Manrope'];
+    if(kind==='app'||kind==='code'){
+      const injected = '<style>html,body{font-family:'+fontStack+';}</style>' + content;
+      frame.srcdoc=injected;
+    } else {
+      frame.srcdoc='<!doctype html><style>body{font:16px/1.7 '+fontStack+';padding:28px;white-space:pre-wrap;color:#171717}</style>'+esc(content);
+    }
+  };
+}
+
+
+// ── Command palette (Cmd+K) & File tree preview ──
+function togglePalette(show){const pal=q('#commandPalette');if(!pal)return;if(typeof show==='boolean')pal.hidden=!show;else pal.hidden=!pal.hidden;if(!pal.hidden){q('#paletteInput').value='';renderPalette('');setTimeout(()=>q('#paletteInput').focus(),30)}}
+function renderPalette(query){const results=q('#paletteResults');if(!results)return;const ql=(query||'').toLowerCase().trim();const items=[{id:'new-thread',label:'New thread',hint:'Create a new conversation',action:()=>newChat()},{id:'new-project',label:'New project',hint:'Create a cloud workspace',action:()=>{if(!state.account)openModal();else renderNewProjectModal()}},{id:'toggle-f',label:(state.metrics?'Hide':'Show')+' Preview f metrics',hint:'Fragment Mono · Instrument Sans · Geist',action:()=>toggleMetrics()},{id:'font-manrope',label:'Font: Manrope',hint:'Default',action:()=>applyPreviewFont('Manrope')},{id:'font-instrument',label:'Font: Instrument Sans',hint:'Preview f',action:()=>applyPreviewFont('Instrument Sans')},{id:'font-geist',label:'Font: Geist',hint:'Preview f',action:()=>applyPreviewFont('Geist Mono')},{id:'font-fragment',label:'Font: Fragment Mono',hint:'Preview f mono',action:()=>applyPreviewFont('Fragment Mono')},{id:'font-dm',label:'Font: DM Mono',hint:'Preview f mono',action:()=>applyPreviewFont('DM Mono')},{id:'font-playfair',label:'Font: Playfair Display',hint:'Display',action:()=>applyPreviewFont('Playfair Display')},{id:'toggle-plan',label:(state.plan?'Disable':'Enable')+' Plan mode',hint:'Plan before action',action:()=>q('#planToggle').click()},{id:'publish',label:'Publish project',hint:'Deploy static site',action:()=>publishProject()},{id:'search-threads',label:'Search threads',hint:'Filter conversations',action:()=>q('#threadSearch').focus()},{id:'toggle-files',label:'Toggle file tree',hint:'Preview files',action:()=>q('#fileTreeToggle').click()},{id:'close-palette',label:'Close palette',hint:'Esc',action:()=>togglePalette(false)}];const filtered=ql?items.filter(i=>i.label.toLowerCase().includes(ql)||i.hint.toLowerCase().includes(ql)):items;results.innerHTML=filtered.map((it,i)=>'<div class="palette-item'+(i===0?' active':'')+'" data-palette="'+it.id+'"><b>'+esc(it.label)+'</b><span style="color:var(--faint);font-size:11px">'+esc(it.hint)+'</span><kbd>↵</kbd></div>').join('');qa('[data-palette]').forEach(el=>el.onclick=()=>{const item=items.find(x=>x.id===el.dataset.palette);togglePalette(false);item?.action()})}
+q('#paletteOpenBtn')?.addEventListener('click',()=>togglePalette(true));
+q('#commandPalette')?.addEventListener('click',e=>{if(e.target===q('#commandPalette'))togglePalette(false)});
+q('#paletteInput')?.addEventListener('input',e=>renderPalette(e.target.value));
+q('#paletteInput')?.addEventListener('keydown',e=>{if(e.key==='Enter'){const first=q('#paletteResults .palette-item');first?.click()}if(e.key==='Escape')togglePalette(false)});
+function renderFileTree(){const list=q('#fileTreeList'),dockList=q('#dockFileList');const files=state.files||[];const html=files.length?files.map(f=>'<div class="file-tree-item'+(f.path===state.file?' active':'')+'" data-path="'+esc(f.path)+'"><span>▸</span><b>'+esc(f.path)+'</b><small style="margin-left:auto;color:var(--faint)">'+esc((f.content_type||'').split(';')[0]||'')+'</small></div>').join(''):'<div class="threads-empty">No files yet. Save a file to see it here.<br><small>Fragment Mono preview stays live.</small></div>';if(list)list.innerHTML=html;if(dockList)dockList.innerHTML=html;qa('[data-path]').forEach(el=>el.onclick=()=>openFilePreview(el.dataset.path))}
+async function openFilePreview(path){state.file=path;renderFileTree();const frame=q('#filePreviewFrame');if(!frame)return;frame.style.display='block';frame.setAttribute('data-content','loading');try{const text=await fetch('/studio/api/projects/'+encodeURIComponent(state.project.id)+'/files/'+encodeURIComponent(path),{credentials:'same-origin'}).then(r=>r.ok?r.text():Promise.reject(new Error('Not found')));renderFilePreview(text);frame.setAttribute('data-content',text.slice(0,20000))}catch(e){renderFilePreview('/* '+esc(e.message)+' */')}}
+function renderFilePreview(content){const frame=q('#filePreviewFrame');if(!frame)return;const font=state.font||'Manrope';const safe=esc(content).slice(0,40000);const isHtml=/<\/?html|<!doctype/i.test(content);if(isHtml){const fontEnc=encodeURIComponent(font).replace(/%20/g,'+');frame.srcdoc='<!doctype html><html><head><meta charset="utf-8"><link href="https://fonts.googleapis.com/css2?family='+fontEnc+':wght@400;500;600;700&display=swap" rel="stylesheet"><style>body{margin:0;padding:16px;font:14px/1.6 \''+font+'\',system-ui,sans-serif;color:#111;background:#fff}*{max-width:100%}pre{white-space:pre-wrap;word-break:break-word}</style></head><body>'+content+'</body></html>'}else{frame.srcdoc='<!doctype html><style>@import url(\'https://fonts.googleapis.com/css2?family='+font.replace(/ /g,'+')+':wght@400;500&display=swap\');body{margin:0;padding:14px;background:#0c0c0e;color:#e6e6e1;font:12px/1.6 \'Fragment Mono\',monospace;white-space:pre-wrap;word-break:break-word}</style><pre>'+safe+'</pre>'}}
+q('#fileTreeToggle')?.addEventListener('click',()=>{const ft=q('#fileTree');ft.hidden=!ft.hidden;if(!ft.hidden)renderFileTree()});
+q('#fileTreeClose')?.addEventListener('click',()=>q('#fileTree').hidden=true);
+document.addEventListener('keydown',e=>{if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='k'){e.preventDefault();togglePalette(true)}});
+try{renderPalette('')}catch{}
 loadSession().then(()=>loadProjects());
+
+
 })();`; }

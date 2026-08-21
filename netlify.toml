@@ -2,5 +2,183 @@
   publish = "netlify/public"
   functions = "netlify/functions"
 
+[build.environment]
+  NODE_VERSION = "22"
+  NPM_FLAGS = "--ignore-scripts"
+  NODE_ENV = "production"
+
 [functions]
   node_bundler = "esbuild"
+
+# ── Context-specific env handling for OSAII Studio Preview f ──
+# PREVIEW_F controls /studio/preview (T3 + font preview). Default enabled.
+# Set to "0" or "false" to disable (see src/index.ts, API/studio-t3.ts).
+# Deploy Previews automatically enable Preview f + preview caching policy.
+[context.production.environment]
+  NODE_ENV = "production"
+  PREVIEW_F = "1"
+
+[context.deploy-preview]
+  command = "npm ci --ignore-scripts"
+[context.deploy-preview.environment]
+  NODE_ENV = "preview"
+  PREVIEW_F = "1"
+  DEPLOY_CONTEXT = "deploy-preview"
+  NETLIFY_PREVIEW = "true"
+
+[context.branch-deploy]
+  command = "npm ci --ignore-scripts"
+[context.branch-deploy.environment]
+  NODE_ENV = "preview"
+  PREVIEW_F = "1"
+  DEPLOY_CONTEXT = "branch-deploy"
+  NETLIFY_PREVIEW = "true"
+
+# ── Worker-adjacent static caching (also mirrored via Worker headers: cache-control + netlify-cdn-cache-control)
+# Durable CDN cache for immutable assets; short CDN cache for HTML with stale-while-revalidate
+
+[[headers]]
+  for = "/osaii.png"
+  [headers.values]
+    Cache-Control = "public, max-age=86400, s-maxage=31536000, stale-while-revalidate=86400"
+    Netlify-CDN-Cache-Control = "public, max-age=31536000, s-maxage=31536000, durable"
+    CDN-Cache-Control = "public, max-age=31536000, durable"
+    Cache-Tag = "static, image"
+
+[[headers]]
+  for = "/favicon.ico"
+  [headers.values]
+    Cache-Control = "public, max-age=86400, s-maxage=31536000, stale-while-revalidate=86400"
+    Netlify-CDN-Cache-Control = "public, max-age=31536000, durable"
+    Cache-Tag = "static, image"
+
+[[headers]]
+  for = "/*.js"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+    Netlify-CDN-Cache-Control = "public, max-age=31536000, durable"
+    Cache-Tag = "static, js"
+
+[[headers]]
+  for = "/*.css"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+    Netlify-CDN-Cache-Control = "public, max-age=31536000, durable"
+    Cache-Tag = "static, css"
+
+[[headers]]
+  for = "/mythos/release.json"
+  [headers.values]
+    Cache-Control = "public, max-age=300, s-maxage=3600, stale-while-revalidate=3600"
+    Netlify-CDN-Cache-Control = "public, max-age=3600, durable"
+    Cache-Tag = "api, mythos"
+
+[[headers]]
+  for = "/docs"
+  [headers.values]
+    Cache-Control = "public, max-age=300, s-maxage=3600, stale-while-revalidate=1800"
+    Netlify-CDN-Cache-Control = "public, max-age=3600, durable"
+    Cache-Tag = "docs, html"
+
+[[headers]]
+  for = "/"
+  [headers.values]
+    Cache-Control = "public, max-age=300, s-maxage=3600, stale-while-revalidate=86400"
+    Netlify-CDN-Cache-Control = "public, max-age=3600, durable"
+    Cache-Tag = "home, html"
+
+[[headers]]
+  for = "/api/v1/models"
+  [headers.values]
+    Cache-Control = "public, max-age=10, s-maxage=30, stale-while-revalidate=60"
+    Cache-Tag = "api, models"
+
+[[headers]]
+  for = "/health"
+  [headers.values]
+    Cache-Control = "public, max-age=5, stale-while-revalidate=10"
+    Cache-Tag = "api, health"
+
+# ── OSAII Studio Preview f — preview-specific overrides (no-store, noindex) ──
+# Preview HTML must never be cached durably so Deploy Previews always show the PR commit.
+# Static assets (js/css/png) remain durable even in previews (above). Worker also injects
+# a preview banner when X-Nf-Preview / deploy-preview host is detected (see src/index.ts).
+# These headers are safe for production (preview paths are not part of the durable prod list).
+
+[[headers]]
+  for = "/studio/preview/*"
+  [headers.values]
+    Cache-Control = "no-store, must-revalidate, max-age=0"
+    Netlify-CDN-Cache-Control = "no-store, durable=false"
+    CDN-Cache-Control = "no-store"
+    Cache-Tag = "preview, studio"
+    X-Robots-Tag = "noindex, nofollow"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+
+[[headers]]
+  for = "/studio/preview"
+  [headers.values]
+    Cache-Control = "no-store, must-revalidate, max-age=0"
+    Netlify-CDN-Cache-Control = "no-store, durable=false"
+    CDN-Cache-Control = "no-store"
+    Cache-Tag = "preview, studio"
+    X-Robots-Tag = "noindex, nofollow"
+    X-Content-Type-Options = "nosniff"
+
+[[headers]]
+  for = "/studio/new/*"
+  [headers.values]
+    Cache-Control = "no-store, must-revalidate, max-age=0"
+    Netlify-CDN-Cache-Control = "no-store, durable=false"
+    CDN-Cache-Control = "no-store"
+    Cache-Tag = "preview, studio"
+    X-Robots-Tag = "noindex, nofollow"
+
+[[headers]]
+  for = "/.netlify/*"
+  [headers.values]
+    Cache-Control = "no-store, must-revalidate"
+    Netlify-CDN-Cache-Control = "no-store"
+
+# Security baseline for Netlify-served HTML (Worker mirrors these for Cloudflare routes)
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Content-Type-Options = "nosniff"
+    X-Frame-Options = "DENY"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    Permissions-Policy = "camera=(), microphone=(), geolocation=()"
+
+# ── SPA fallback for OSAII Studio preview (Deploy Preview deep links must not 404) ──
+# Worker handles /studio/preview/* at osaii.wyvernhub.net; Netlify preview deploys need
+# the same rewrite when serving the static fallback (netlify/public/index.html).
+# This ensures /studio/preview, /studio/preview/a, and /studio/preview/foo all serve
+# the preview shell with 200, preserving client routing + font preview ?font= handling.
+# Note: /studio/preview/* -> /index.html (Netlify) mirrors Worker route /studio/preview/*
+# which serves studioT3Page (see src/index.ts). The /studio/preview/a canonical shell is
+# handled by Worker; Netlify fallback points at index.html which is a placeholder that
+# the Worker-backed SPA will hydrate via client fetch.
+[[redirects]]
+  from = "/studio/preview"
+  to = "/index.html"
+  status = 200
+  force = false
+
+[[redirects]]
+  from = "/studio/preview/*"
+  to = "/index.html"
+  status = 200
+  force = false
+
+[[redirects]]
+  from = "/studio/new"
+  to = "/index.html"
+  status = 200
+  force = false
+
+[[redirects]]
+  from = "/studio/new/*"
+  to = "/index.html"
+  status = 200
+  force = false

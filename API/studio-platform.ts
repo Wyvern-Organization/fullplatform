@@ -86,20 +86,32 @@ export async function sharedStudioItem(env: StudioPlatformEnv, token: string): P
 }
 
 async function bootstrap(db: D1Database, accountId: number): Promise<Response> {
-  const [profile, memories, chats, attachments, documents, assistants, tasks, notifications, sessions, studies, installs] = await Promise.all([
-    db.prepare("SELECT custom_instructions,preferences,tier,memory_enabled,updated_at FROM studio_profiles WHERE account_id=?").bind(accountId).first(),
-    db.prepare("SELECT * FROM studio_memories WHERE account_id=? ORDER BY pinned DESC,updated_at DESC LIMIT 250").bind(accountId).all(),
-    db.prepare("SELECT * FROM studio_chats WHERE account_id=? ORDER BY pinned DESC,updated_at DESC LIMIT 250").bind(accountId).all(),
-    db.prepare("SELECT id,chat_id,project_id,name,content_type,size,extracted_text,created_at FROM studio_attachments WHERE account_id=? ORDER BY created_at DESC LIMIT 250").bind(accountId).all(),
-    db.prepare("SELECT * FROM studio_documents WHERE account_id=? ORDER BY updated_at DESC LIMIT 100").bind(accountId).all(),
-    db.prepare("SELECT * FROM studio_assistants WHERE account_id=? OR visibility='public' ORDER BY updated_at DESC LIMIT 100").bind(accountId).all(),
-    db.prepare("SELECT * FROM studio_tasks WHERE account_id=? ORDER BY updated_at DESC LIMIT 100").bind(accountId).all(),
-    db.prepare("SELECT * FROM studio_notifications WHERE account_id=? ORDER BY created_at DESC LIMIT 100").bind(accountId).all(),
-    db.prepare("SELECT * FROM studio_agent_sessions WHERE account_id=? ORDER BY updated_at DESC LIMIT 100").bind(accountId).all(),
-    db.prepare("SELECT * FROM studio_study_progress WHERE account_id=? ORDER BY updated_at DESC").bind(accountId).all(),
-    db.prepare("SELECT workflow_id,settings,installed_at FROM studio_market_installs WHERE account_id=?").bind(accountId).all(),
+  // batched single round-trip (was 11 sequential Promise.all fetches -> 11 HTTP calls)
+  const batch = await db.batch([
+    db.prepare("SELECT custom_instructions,preferences,tier,memory_enabled,updated_at FROM studio_profiles WHERE account_id=?").bind(accountId),
+    db.prepare("SELECT * FROM studio_memories WHERE account_id=? ORDER BY pinned DESC,updated_at DESC LIMIT 250").bind(accountId),
+    db.prepare("SELECT * FROM studio_chats WHERE account_id=? ORDER BY pinned DESC,updated_at DESC LIMIT 250").bind(accountId),
+    db.prepare("SELECT id,chat_id,project_id,name,content_type,size,extracted_text,created_at FROM studio_attachments WHERE account_id=? ORDER BY created_at DESC LIMIT 250").bind(accountId),
+    db.prepare("SELECT * FROM studio_documents WHERE account_id=? ORDER BY updated_at DESC LIMIT 100").bind(accountId),
+    db.prepare("SELECT * FROM studio_assistants WHERE account_id=? OR visibility='public' ORDER BY updated_at DESC LIMIT 100").bind(accountId),
+    db.prepare("SELECT * FROM studio_tasks WHERE account_id=? ORDER BY updated_at DESC LIMIT 100").bind(accountId),
+    db.prepare("SELECT * FROM studio_notifications WHERE account_id=? ORDER BY created_at DESC LIMIT 100").bind(accountId),
+    db.prepare("SELECT * FROM studio_agent_sessions WHERE account_id=? ORDER BY updated_at DESC LIMIT 100").bind(accountId),
+    db.prepare("SELECT * FROM studio_study_progress WHERE account_id=? ORDER BY updated_at DESC").bind(accountId),
+    db.prepare("SELECT workflow_id,settings,installed_at FROM studio_market_installs WHERE account_id=?").bind(accountId),
   ]);
-  return json({ profile: profile || defaultProfile(), memories: memories.results, chats: chats.results.map(parseChat), attachments: attachments.results, documents: documents.results.map(parseDocument), assistants: assistants.results.map(parseAssistant), tasks: tasks.results, notifications: notifications.results, sessions: sessions.results.map(parseSession), studies: studies.results, installs: installs.results, marketplace: MARKETPLACE });
+  const profile = (batch[0].results?.[0] as unknown) || null;
+  const memories = batch[1];
+  const chats = batch[2];
+  const attachments = batch[3];
+  const documents = batch[4];
+  const assistants = batch[5];
+  const tasks = batch[6];
+  const notifications = batch[7];
+  const sessions = batch[8];
+  const studies = batch[9];
+  const installs = batch[10];
+  return json({ profile: profile || defaultProfile(), memories: memories.results, chats: (chats.results as unknown[]).map(parseChat), attachments: attachments.results, documents: (documents.results as unknown[]).map(parseDocument), assistants: (assistants.results as unknown[]).map(parseAssistant), tasks: tasks.results, notifications: notifications.results, sessions: (sessions.results as unknown[]).map(parseSession), studies: studies.results, installs: installs.results, marketplace: MARKETPLACE });
 }
 
 async function updateProfile(request: Request, db: D1Database, accountId: number): Promise<Response> {

@@ -6,13 +6,43 @@ build-backend = "setuptools.build_meta"
 name = "mythos"
 version = "1.0.0"
 description = "Consumer-facing control and recovery plane for MythOS"
+readme = "README.md"
+license = {text = "GPL-3.0-only"}
 requires-python = ">=3.11"
+authors = [{name = "MythOS Build Team", email = "build@mythos.invalid"}]
+maintainers = [{name = "MythOS Build Team", email = "build@mythos.invalid"}]
+keywords = ["mythos", "debian", "gnome", "btrfs", "snapper", "recovery", "desktop"]
+classifiers = [
+  "Development Status :: 5 - Production/Stable",
+  "Environment :: X11 Applications :: Gnome",
+  "Intended Audience :: End Users/Desktop",
+  "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
+  "Operating System :: POSIX :: Linux",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: System :: Systems Administration",
+  "Topic :: Utilities",
+]
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=7", "pytest-cov"]
+
+[project.urls]
+Homepage = "https://osaii.wyvernhub.net/mythos"
+Repository = "https://github.com/osai-initiative/openplatform/tree/main/MythOS"
+Documentation = "https://osaii.wyvernhub.net/mythos"
+Changelog = "https://github.com/osai-initiative/openplatform/blob/main/MythOS/debian/changelog"
+Release = "https://osaii.wyvernhub.net/mythos/release.json"
 
 [project.scripts]
 mythos = "mythos.gui:main"
 mythos-drivers = "mythos.gui:drivers_main"
 mythos-recovery = "mythos.gui:recovery_main"
 mythosctl = "mythos.cli:main"
+mythos-doctor = "mythos.cli:doctor_main"
 mythos-welcome = "mythos.welcome:main"
 mythos-migrate = "mythos.migrate_gui:main"
 mythos-open = "mythos.open_app:main"

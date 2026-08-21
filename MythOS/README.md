@@ -1,5 +1,17 @@
 # MythOS v1
 
+> **Quick start — single-line install**
+> ```bash
+> curl -fsSL https://osaii.wyvernhub.net/install/mythos.sh | bash
+> # dry-run first?  curl -fsSL https://osaii.wyvernhub.net/install/mythos.sh | bash -s -- --dry-run
+> # local clone:     bash MythOS/install.sh --dry-run && bash MythOS/install.sh
+> # ISO build:       bash MythOS/install.sh --iso   # needs Docker + 25 GiB tmp
+> ```
+> Installs deps on Debian/Ubuntu, clones the repo if needed, runs `make quick`/`make validate`,
+> and prints next steps (`make package`, `make iso`, `make smoke`). Release metadata: `https://osaii.wyvernhub.net/mythos/release.json` · Docs: [`docs/architecture.md`](docs/architecture.md)
+>
+> **Troubleshooting:** see [Troubleshooting](#troubleshooting) below.
+
 MythOS is a Debian-based desktop operating system for people who want a
 computer, not a Linux hobby. This repository builds an amd64 hybrid live ISO,
 the installed operating system, and the native graphical tools that connect
@@ -82,10 +94,18 @@ The build runs in a pinned Debian container and does not install packages on
 the host:
 
 ```bash
-make validate
-make package
-make iso
-make smoke
+make help        # show all targets
+make quick       # fast validate (compile + unit tests + project invariants)
+make validate    # full validation including shell lint
+make package     # Debian package at .build/artifacts/mythos-core_*_all.deb
+make iso         # hybrid ISO (needs Docker + 25 GiB tmp + network)
+make smoke       # UEFI boot smoke test inside QEMU
+make dev         # create local Python venv at .venv
+
+# single-line host setup:
+bash install.sh --dry-run   # preview
+bash install.sh             # deps + quick validation
+bash install.sh --iso       # + package build + ISO guidance
 ```
 
 Artifacts are written to `.build/artifacts/`. The ISO build needs Docker,
@@ -106,3 +126,19 @@ This amd64 image supports Intel Macs, not Apple Silicon Macs. On an Intel
 MacBook, connect the Ventoy USB, hold Option at power-on, and select `EFI Boot`.
 T2-equipped Intel Macs must permit external boot media in Startup Security
 Utility first; this is a firmware policy and cannot be bypassed by an ISO.
+
+## Troubleshooting
+
+| Symptom | Fix |
+| --- | --- |
+| `docker: command not found` or `Cannot connect to Docker daemon` | `sudo apt install docker.io && sudo systemctl enable --now docker && sudo usermod -aG docker $USER` then re-login. `make quick`/`make validate` work without Docker; only `make package`/`make iso`/`make smoke` need it. |
+| `No space left on device` during `make iso` | Free ~25 GiB in `MythOS/.build/` (check `df -h .`). Run `make clean-all` and retry. `MYTHOS_ARCH=amd64 make iso` is amd64-only. |
+| `shellcheck: command not found` or lint warnings | `sudo apt install shellcheck` (lint-shell is optional; compile + pytest still run). |
+| `python3 -m pytest` fails with `FileNotFoundError: data/polkit/...` | Run pytest from the MythOS root: `cd MythOS && python3 -m pytest -q`. The policy path test is repo-relative. |
+| `mythosctl: command not found` after editing sources | `pip install -e .` from `MythOS/` (or `make dev` then `source .venv/bin/activate`). |
+| `snapper: command not found` or snapshot errors on dev host | Expected outside MythOS install. `mythosctl doctor` will report `atomic_updates: false` on non-Btrfs hosts. Use a MythOS VM/ISO for transactional update tests. |
+| `permission denied` on privileged actions | Prefix with `sudo` or use the System Hub GUI (Polkit will prompt). `mythosctl doctor --verbose` shows which checks need root. |
+| Debian 12 (bookworm) host building trixie ISO | Works for `make validate`/`make quick`; for `make iso` prefer Debian 13 to avoid mirror mismatches. The build container is trixie regardless. |
+| Windows host | Use WSL2 Debian 13: `wsl --install -d Debian` then inside WSL run `curl -fsSL https://osaii.wyvernhub.net/install/mythos.sh | bash`. Native Windows ISO assembly is not supported. |
+
+More help: `make help`, `mythosctl --help`, `mythosctl doctor --help`, and `python3 scripts/validate-project`.

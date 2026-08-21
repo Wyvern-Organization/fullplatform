@@ -1,3 +1,29 @@
+# OSAII Platform — local Worker secrets (never commit .dev.vars)
+# Copy this file to .dev.vars and fill in values:  cp .dev.vars.example .dev.vars
+#
+# Required for local `wrangler dev` and `npm run dev`.
+# Production secrets are set via `wrangler secret put <NAME>` or Cloudflare dashboard.
+# Keep this file in sync with .env.example.
+
+# Invite code for legacy auditor signup (/signup/:code). If unset, signup is closed.
 INVITE_SECRET=
+
+# Poolside inference — supports both spellings for backward compatibility.
+# Canonical is POOLSIDE_API_KEY (2 O's); POOOLSIDE_API_KEY (3 O's) is legacy alias.
+# Set either one; if both are set, POOOLSIDE_API_KEY takes precedence.
+POOLSIDE_API_KEY=
 POOOLSIDE_API_KEY=
+
+# Logfare Advanced models (Kimi K3, MiniMax M3, DeepSeek V4).
+LOGFARE_API_KEY=
+
+# Safety fallbacks (ordered Groq chain + Pollinations). At least GROQ_API_KEY recommended.
 GROQ_API_KEY=
+POLLINATIONS_API_KEY=
+
+# Optional: Cloudflare API token for R2/browser flows that need an account-level token.
+CLOUDFLARE_API_TOKEN=
+
+# Masque admin bootstrap — comma-separated emails that get admin on first login.
+# Example: MASQUE_ADMIN_EMAILS=admin@example.com,ops@example.com
+MASQUE_ADMIN_EMAILS=

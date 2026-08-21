@@ -119,8 +119,12 @@ export class MasqueSession extends Agent<MasqueSessionEnv, MasqueState> {
     const seq = Math.max(0, Number(after || 0) || 0);
     const events = this.sql<{ seq: number; event: string; payload: string }>`
       SELECT seq,event,payload FROM masque_stream_events WHERE seq>${seq} ORDER BY seq LIMIT 1000`;
-    const body = events.map((row) => `id: ${row.seq}\nevent: ${row.event}\ndata: ${row.payload}\n\n`).join("");
-    return new Response(body || ": no newer events\n\n", { headers: sseHeaders() });
+    // SSE robustness: include retry hint and keepalive comments; clients should handle last-event-id
+    const retry = "retry: 1500\n";
+    const body = events.length
+      ? retry + events.map((row) => `id: ${row.seq}\nevent: ${row.event}\ndata: ${row.payload}\n\n`).join("") + ": keepalive\n\n"
+      : retry + ": no newer events\n\n";
+    return new Response(body, { headers: sseHeaders() });
   }
 
   private async createMessage(request: Request): Promise<Response> {
@@ -197,10 +201,15 @@ export class MasqueSession extends Agent<MasqueSessionEnv, MasqueState> {
         let eventSeq = 0;
         const emit = (event: string, payload: Record<string, unknown>) => {
           eventSeq += 1;
-          const complete = { sessionId: this.name, messageId: assistantId, userMessageId: input.internalProactive || alternativeSource ? undefined : userId, branchId, revision: this.state.revision, selectedFamily: family, ...payload };
+          const complete = { sessionId: this.name, messageId: assistantId, userMessageId: input.internalProactive || alternativeSource ? undefined : userId, branchId, revision: this.state.revision, selectedFamily: family, docs: "/docs#masque", health: "/health", ...payload };
           this.recordEvent(turnId, event, complete);
-          controller.enqueue(encoder.encode(`id: ${eventSeq}\nevent: ${event}\ndata: ${JSON.stringify(complete)}\n\n`));
+          // Include retry hint on start for SSE robustness
+          const retry = event === "start" ? "retry: 1500\n" : "";
+          controller.enqueue(encoder.encode(`${retry}id: ${eventSeq}\nevent: ${event}\ndata: ${JSON.stringify(complete)}\n\n`));
         };
+        // Keepalive comment every 15s while upstream is pending
+        const keepalive = setInterval(()=>{ try{ controller.enqueue(encoder.encode(`: keepalive\n\n`)); }catch{} }, 15000);
+
         emit("start", { turnId, characterId: character.id });
         try {
           const reader = upstream.body!.getReader();
@@ -251,10 +260,10 @@ export class MasqueSession extends Agent<MasqueSessionEnv, MasqueState> {
         } catch (error) {
           const detail = error instanceof Error ? error.message : String(error);
           this.setState({ ...this.state, status: "error", activeTurnId: undefined });
-          emit("error", { error: detail, finishReason: "error" });
+          clearInterval(keepalive); emit("error", { error: detail, finishReason: "error", docs: "/docs#masque" });
         } finally {
           upstreamReader = null;
-          controller.close();
+          clearInterval(keepalive); controller.close();
         }
       },
       cancel: async (reason) => {
@@ -423,5 +432,6 @@ function sseHeaders(): HeadersInit {
     "cache-control": "no-store, no-transform",
     connection: "keep-alive",
     "x-accel-buffering": "no",
+    "x-masque-sse": "start/delta/finish/error; retry 1500; last-event-id supported",
   };
 }

@@ -3,6 +3,18 @@ name = "cosaii-app-server"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+description.workspace = true
+readme.workspace = true
+keywords.workspace = true
+categories.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+
+[package.metadata.cosaii]
+health_endpoint = "/health"
+install_verify = "cosaii --version && cosaii doctor"
 
 [dependencies]
 anyhow.workspace = true

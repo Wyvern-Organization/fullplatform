@@ -7,6 +7,13 @@ version = "0.1.0"
 edition = "2024"
 license = "GPL-3.0-only"
 repository = "https://github.com/osai-initiative/openplatform"
+description = "Cosaii — cozy local agentic runtime (encrypted sessions, tools, and Platform bridge)"
+readme = "README.md"
+keywords = ["agent", "cli", "ai", "tui", "encrypted-storage"]
+categories = ["command-line-utilities", "cryptography"]
+authors = ["OSAII Initiative"]
+homepage = "https://osaii.wyvernhub.net"
+documentation = "https://osaii.wyvernhub.net/docs#cosaii"
 
 [workspace.dependencies]
 anyhow = "1"
@@ -31,3 +38,15 @@ tokio-tungstenite = "0.27"
 uuid = { version = "1", features = ["v4", "serde"] }
 x25519-dalek = { version = "2", features = ["static_secrets"] }
 zip = { version = "2", default-features = false, features = ["deflate"] }
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+strip = "debuginfo"
+panic = "abort"
+overflow-checks = false
+
+[profile.release.package."*"]
+opt-level = 3
+codegen-units = 1

@@ -128,6 +128,12 @@ footer a { transition: color .18s ease; }
 footer a:hover { color: var(--text); }
 @media (max-width: 860px) { .grid-3 { grid-template-columns: 1fr; } .table-row { grid-template-columns: 1fr; gap: 10px; } }
 @media (max-width: 640px) { .page { padding: 0 20px 56px; } .nav { display: none; } .topbar { padding: 20px 0; } }
+.skip{position:fixed;left:1rem;top:-5rem;background:#fff;color:#000;padding:.7rem 1rem;border-radius:.5rem;z-index:20}
+.skip:focus{top:1rem}
+a:focus-visible,button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible{outline:2px solid var(--green);outline-offset:2px}
+@media (prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;animation-duration:.01ms!important;transition-duration:.01ms!important}
+@media (forced-colors:active){*{border-color:CanvasText!important}}
+
 `;
 
 export function layout(body: string, opts: { title: string; active?: string; script?: string }): string {
@@ -145,25 +151,39 @@ export function layout(body: string, opts: { title: string; active?: string; scr
 <head>
 <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 <meta name="theme-color" content="#000000" />
-<meta name="description" content="OSAII — the Open-Source AI Initiative. We certify whether models are open, and release open models ourselves." />
+<meta name="color-scheme" content="dark light" />
+<meta name="description" content="OSAII — the Open-Source AI Initiative. We certify whether models are open, and release open models ourselves. Part of OSAII Platform with API, Studio, Masque, Cosaii, MythOS." />
+<meta property="og:title" content="${opts.title} — OSAII" />
+<meta property="og:description" content="OSAII Platform — certification, API, Studio, Masque, MythOS, Cosaii." />
+<meta property="og:image" content="/osaii.png" />
+<meta property="og:type" content="website" />
+<meta name="twitter:card" content="summary" />
+<link rel="canonical" href="https://osaii.wyvernhub.net${opts.active === 'Mission' ? '/initiative' : opts.active === 'Catalog' ? '/catalog' : ''}" />
+<link rel="manifest" href="/studio/new/manifest.webmanifest" />
 <link rel="icon" href="/osaii.png" type="image/png" />
-<title>${opts.title} — OSAII</title>
+<title>${opts.title} — OSAII Platform</title>
 <style>${CSS}</style>
 </head>
 <body>
+<a class="skip" href="#main">Skip to content</a>
 <div class="page">
-  <header class="topbar">
-    <a class="brand" href="/">OSAII</a>
-    <nav class="nav" aria-label="Primary">${navLinks}</nav>
+  <header class="topbar" role="banner">
+    <a class="brand" href="/" aria-label="OSAII Platform home">OSAII</a>
+    <nav class="nav" aria-label="Primary">${navLinks} <a href="/products">Products</a> <a href="/docs">Docs</a></nav>
     <a class="nav-cta" href="/signin">Auditor sign in</a>
     <a class="nav-cta nav-cta-solid" href="/submit">Submit a model ↗</a>
   </header>
-  <main>${body}</main>
-  <footer>
-    <span>© <span id="year"></span> OSAII · Open-Source AI Initiative</span>
-    <div class="foot-links">
+  <main id="main">
+  ${body}</main>
+  <footer role="contentinfo">
+    <span>© <span id="year"></span> OSAII Platform · Open-Source AI Initiative</span>
+    <div class="foot-links" aria-label="Footer">
       <a href="${DISCORD_URL}" target="_blank" rel="noopener">Discord</a>
       <a href="/catalog">Catalog</a>
+      <a href="/products">Products</a>
+      <a href="/docs">Docs</a>
+      <a href="/masque">Masque</a>
+      <a href="/mythos">MythOS</a>
       <a href="/signin">Auditors</a>
       <a href="/health">Health</a>
     </div>

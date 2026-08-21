@@ -12,12 +12,18 @@ const external = [
 ].filter(name => name !== platformPackage)
 const target = process.env.COSAII_BUN_TARGET || `bun-${process.platform === "win32" ? "windows" : process.platform}-${process.arch === "arm64" ? "arm64" : "x64"}`
 const output = process.platform === "win32" ? "./dist/cosaii.exe" : "./dist/cosaii"
+const isProd = process.env.NODE_ENV === "production" || process.env.CI === "true";
 const result = await Bun.build({
   entrypoints: ["./src/index.tsx"],
   plugins: [solidPlugin],
   external,
-  minify: true,
-  sourcemap: "external",
+  // Enable full minify (syntax + whitespace) for prod; identifier minify is safe for Solid JSX via opentui plugin
+  minify: isProd ? { syntax: true, whitespace: true, identifiers: true } : true,
+  sourcemap: isProd ? "none" : "external",
+  // Production define ensures dead-code elimination of dev branches
+  define: { "process.env.NODE_ENV": JSON.stringify(isProd ? "production" : "development") },
+  // Keep bundle lean: no splitting for single-entry TUI, tree-shaking is default
+  splitting: false,
   compile: { target: target as any, outfile: output },
 })
 if (!result.success) {

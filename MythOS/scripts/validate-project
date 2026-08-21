@@ -147,4 +147,51 @@ for relative in ("docs/architecture.md", "docs/security.md", "docs/release-accep
     if f"({relative})" in readme and not (ROOT / relative).is_file():
         fail(f"README links missing file {relative}")
 
-print(f"validation: ok ({len(packages)} image packages, {len(desktop_ids)} desktop entries)")
+# --- VERSION consistency: VERSION, pyproject.toml, constants, __init__, changelog, API/mythos.ts ---
+version = (ROOT / "VERSION").read_text(encoding="utf-8").strip()
+if not re.fullmatch(r"\d+\.\d+\.\d+", version):
+    fail(f"VERSION must be semver, got: {version!r}")
+
+pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+if f'version = "{version}"' not in pyproject:
+    fail(f"pyproject.toml version does not match VERSION ({version})")
+
+constants_py = (ROOT / "src/mythos/constants.py").read_text(encoding="utf-8")
+if f'VERSION = "{version}"' not in constants_py:
+    fail(f"src/mythos/constants.py VERSION does not match VERSION ({version})")
+
+init_py = (ROOT / "src/mythos/__init__.py").read_text(encoding="utf-8")
+if version not in init_py:
+    fail(f"src/mythos/__init__.py __version__ does not contain VERSION ({version})")
+
+changelog = (ROOT / "debian/changelog").read_text(encoding="utf-8")
+if f"mythos ({version})" not in changelog:
+    fail(f"debian/changelog does not contain mythos ({version})")
+
+# Optional: ensure help/quick targets and install script exist (single-line install)
+if not (ROOT / "install.sh").is_file():
+    fail("missing install.sh (single-line installer)")
+install_text = (ROOT / "install.sh").read_text(encoding="utf-8")
+if "https://osaii.wyvernhub.net/install/mythos.sh" not in install_text:
+    fail("install.sh does not reference the hosted mythos install route")
+if "curl -fsSL https://osaii.wyvernhub.net/install/mythos.sh | bash" not in readme:
+    fail("README quickstart missing curl install command")
+
+makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+for target in ("quick:", "dev:", "clean-all:", "help:"):
+    if target not in makefile:
+        fail(f"Makefile missing target {target}")
+
+# Ensure worker serves mythos install route if API file exists in parent repo
+worker_mythos_install = ROOT.parent / "API" / "mythos-install.ts"
+if worker_mythos_install.is_file():
+    worker_ts = worker_mythos_install.read_text(encoding="utf-8")
+    if "mythosShellInstaller" not in worker_ts:
+        fail("API/mythos-install.ts does not export mythosShellInstaller")
+    src_index = ROOT.parent / "src" / "index.ts"
+    if src_index.is_file():
+        index_text = src_index.read_text(encoding="utf-8")
+        if "/install/mythos.sh" not in index_text:
+            fail("src/index.ts does not serve /install/mythos.sh")
+
+print(f"validation: ok ({len(packages)} image packages, {len(desktop_ids)} desktop entries, version {version})")
