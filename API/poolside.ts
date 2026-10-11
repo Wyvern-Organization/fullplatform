@@ -1,6 +1,7 @@
 import { BITNET_MODEL_ID, bitnetChatCompletion } from './bitnet';
 
 const POOLSIDE_BASE_URL = 'https://inference.poolside.ai/v1';
+const POLLINATIONS_BASE_URL = 'https://gen.pollinations.ai';
 const POOLSIDE_SAFETY_MODEL = 'poolside/laguna-xs-2.1';
 const GROQ_SAFETY_MODELS = [
   'openai/gpt-oss-20b',
@@ -15,6 +16,13 @@ const GROQ_SAFETY_MODELS = [
 const LLAMA_GUARD_MODEL = 'llama-guard-3-8b';
 const PROMPT_GUARD_MODEL = 'meta-llama/llama-prompt-guard-2-86m';
 const POLLINATIONS_SAFETY_MODEL = 'qwen-safety';
+// Catalog-verified, general-purpose community models, in preference order.
+// Their live metadata is rechecked before every fallback call; do not use a
+// candidate unless Pollinations still reports it as community and zero-cost.
+const POLLINATIONS_FALLBACK_MODELS = [
+  'community/YoannDev90/poolside-laguna-s-2.1:free',
+  'community/ZapGaming/llama3.1-8b-xturbo',
+] as const;
 
 export interface PoolsideEnv {
   POOOLSIDE_API_KEY?: string;
@@ -34,7 +42,7 @@ const corsHeaders = {
   'access-control-allow-origin': '*',
   'access-control-allow-methods': 'GET, POST, OPTIONS',
   'access-control-allow-headers': 'authorization, content-type',
-  'access-control-expose-headers': 'retry-after, x-ratelimit-limit, x-ratelimit-remaining, x-ratelimit-reset, x-ratelimit-hour-limit, x-ratelimit-hour-remaining, x-ratelimit-hour-reset, x-ratelimit-day-limit, x-ratelimit-day-remaining, x-ratelimit-day-reset, x-osaii-usage-prompt-tokens, x-osaii-usage-completion-tokens, x-osaii-usage-total-tokens, x-osaii-usage-cached-tokens, x-osaii-usage-reasoning-tokens, x-osaii-completion-warning, x-osaii-bitnet-device, x-osaii-streaming-disabled',
+  'access-control-expose-headers': 'retry-after, x-ratelimit-limit, x-ratelimit-remaining, x-ratelimit-reset, x-ratelimit-hour-limit, x-ratelimit-hour-remaining, x-ratelimit-hour-reset, x-ratelimit-day-limit, x-ratelimit-day-remaining, x-ratelimit-day-reset, x-osaii-usage-prompt-tokens, x-osaii-usage-completion-tokens, x-osaii-usage-total-tokens, x-osaii-usage-cached-tokens, x-osaii-usage-reasoning-tokens, x-osaii-completion-warning, x-osaii-bitnet-device, x-osaii-streaming-disabled, x-osaii-fallback-provider, x-osaii-fallback-model',
   'access-control-max-age': '86400',
 };
 
@@ -260,11 +268,11 @@ export async function poolsideModelRequest(
     return apiError('invalid_request_error', 'Request body must be valid JSON.', 400);
   }
 
-  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+  if (!isRecord(body)) {
     return apiError('invalid_request_error', 'Request body must be a JSON object.', 400);
   }
 
-  const model = (body as { model?: unknown }).model;
+  const model = body.model;
   if (typeof model !== 'string' || !model.trim()) {
     return apiError('invalid_request_error', 'The model field is required.', 400, 'model');
   }
@@ -287,7 +295,7 @@ export async function poolsideModelRequest(
     if (endpoint !== '/chat/completions') {
       return apiError('invalid_request_error', 'Mini (Preview) currently supports Chat Completions; use /api/v1/chat/completions.', 400, 'model', 'unsupported_endpoint');
     }
-    const upstream = await bitnetChatCompletion(body as Record<string, unknown>, request.signal);
+    const upstream = await bitnetChatCompletion(body, request.signal);
     return finalizeModelResponse(upstream, env, options.finalOutputSafety !== false);
   }
   if (model.startsWith('logfare/')) {
@@ -326,14 +334,189 @@ export async function poolsideModelRequest(
     }
   }
 
-  const upstream = await poolsideFetch(endpoint, env, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', accept: request.headers.get('accept') ?? 'application/json' },
-    // Keep tool definitions, structured-output schemas, reasoning fields, and
-    // streaming options exactly as the OpenAI-compatible client supplied them.
-    body: rawBody,
-  });
+  let upstream: Response;
+  try {
+    upstream = await poolsideFetch(endpoint, env, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', accept: request.headers.get('accept') ?? 'application/json' },
+      // Keep tool definitions, structured-output schemas, reasoning fields, and
+      // streaming options exactly as the OpenAI-compatible client supplied them.
+      body: rawBody,
+      signal: request.signal,
+    });
+  } catch (error) {
+    if (request.signal.aborted || !(error instanceof TypeError)) throw error;
+    const fallback = await pollinationsFallbackRequest({ body, requestedModel: model, endpoint, request, env });
+    if (!fallback) throw error;
+    logPollinationsFallback(model, fallback.model, 'network_error');
+    return withPollinationsFallbackMetadata(
+      await finalizeModelResponse(fallback.response, env, options.finalOutputSafety !== false),
+      fallback.model,
+    );
+  }
+
+  if (isRetryableProviderFailure(upstream.status) && model.startsWith('poolside/')) {
+    const fallback = await pollinationsFallbackRequest({ body, requestedModel: model, endpoint, request, env });
+    if (fallback) {
+      logPollinationsFallback(model, fallback.model, upstream.status);
+      return withPollinationsFallbackMetadata(
+        await finalizeModelResponse(fallback.response, env, options.finalOutputSafety !== false),
+        fallback.model,
+      );
+    }
+  }
   return finalizeModelResponse(upstream, env, options.finalOutputSafety !== false);
+}
+
+type PollinationsFallbackModel = {
+  readonly id: string;
+  readonly inputModalities: readonly string[];
+  readonly supportedEndpoints: readonly string[];
+  readonly capabilities: readonly string[];
+  readonly tools: boolean;
+};
+
+type PollinationsFallbackResponse = {
+  readonly model: string;
+  readonly response: Response;
+};
+
+type PollinationsFallbackRequest = {
+  readonly body: Record<string, unknown>;
+  readonly requestedModel: string;
+  readonly endpoint: string;
+  readonly request: Request;
+  readonly env: PoolsideEnv;
+};
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function stringList(value: unknown): readonly string[] | null {
+  return Array.isArray(value) && value.every((entry) => typeof entry === 'string')
+    ? value
+    : null;
+}
+
+function isZeroPrice(value: unknown): boolean {
+  if (typeof value === 'number') return Number.isFinite(value) && value === 0;
+  if (typeof value !== 'string' || !value.trim()) return false;
+  const price = Number(value);
+  return Number.isFinite(price) && price === 0;
+}
+
+function parseFreePollinationsModel(value: unknown, expectedId: string): PollinationsFallbackModel | null {
+  if (!isRecord(value) || value.id !== expectedId || value.community !== true || value.category !== 'text' || value.paid_only !== false) return null;
+  if (!isRecord(value.health) || value.health.status !== 'healthy') return null;
+  if (!isRecord(value.pricing) || value.pricing.currency !== 'pollen') return null;
+  const prices = Object.entries(value.pricing).filter(([name]) => name !== 'currency');
+  if (prices.some(([, price]) => !isZeroPrice(price))) return null;
+
+  const inputModalities = stringList(value.input_modalities);
+  const supportedEndpoints = stringList(value.supported_endpoints);
+  const capabilities = stringList(value.capabilities);
+  if (!inputModalities?.includes('text') || !supportedEndpoints?.includes('/v1/chat/completions') || !capabilities) return null;
+
+  return {
+    id: expectedId,
+    inputModalities,
+    supportedEndpoints,
+    capabilities,
+    tools: value.tools === true,
+  };
+}
+
+function isTextOnlyChatRequest(body: Record<string, unknown>): boolean {
+  if (!Array.isArray(body.messages)) return false;
+  return body.messages.every((message) => {
+    if (!isRecord(message)) return false;
+    const content = message.content;
+    if (content === undefined || content === null || typeof content === 'string') return true;
+    return Array.isArray(content) && content.every((part) => isRecord(part) && part.type === 'text');
+  });
+}
+
+function isRetryableProviderFailure(status: number): boolean {
+  return status === 408 || status === 425 || status === 429 || status >= 500;
+}
+
+async function pollinationsFallbackRequest({ body, requestedModel, endpoint, request, env }: PollinationsFallbackRequest): Promise<PollinationsFallbackResponse | null> {
+  if (!env.POLLINATIONS_API_KEY || !requestedModel.startsWith('poolside/') || endpoint !== '/chat/completions' || !isTextOnlyChatRequest(body)) return null;
+
+  try {
+    const catalog = await fetchPollinationsWithTimeout(
+      `${POLLINATIONS_BASE_URL}/v1/models?source=community`,
+      request,
+      { headers: { accept: 'application/json' } },
+    );
+    if (!catalog.ok) return null;
+    const payload = await catalog.json<unknown>();
+    if (!isRecord(payload) || !Array.isArray(payload.data)) return null;
+
+    const models = new Map<string, PollinationsFallbackModel>();
+    for (const modelId of POLLINATIONS_FALLBACK_MODELS) {
+      const candidate = payload.data.find((entry: unknown) => isRecord(entry) && entry.id === modelId);
+      const parsed = parseFreePollinationsModel(candidate, modelId);
+      if (parsed) models.set(modelId, parsed);
+    }
+
+    const requiresTools = Array.isArray(body.tools) && body.tools.length > 0;
+    for (const modelId of POLLINATIONS_FALLBACK_MODELS) {
+      const model = models.get(modelId);
+      if (!model || (requiresTools && !model.tools && !model.capabilities.includes('tool_calling'))) continue;
+      const response = await fetchPollinationsWithTimeout(`${POLLINATIONS_BASE_URL}/v1/chat/completions`, request, {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${env.POLLINATIONS_API_KEY}`,
+          'content-type': 'application/json',
+          accept: request.headers.get('accept') ?? 'application/json',
+        },
+        body: JSON.stringify({ ...body, model: model.id }),
+      });
+      if (response.ok) return { model: model.id, response };
+      if (response.status === 401 || response.status === 402 || response.status === 403) return null;
+    }
+    return null;
+  } catch (error) {
+    if (request.signal.aborted) return null;
+    if (error instanceof TypeError || error instanceof SyntaxError || (error instanceof DOMException && error.name === 'AbortError')) {
+      console.log(JSON.stringify({ event: 'inference_fallback_unavailable', provider: 'pollinations', error: error.name }));
+      return null;
+    }
+    throw error;
+  }
+}
+
+async function fetchPollinationsWithTimeout(url: string, request: Request, init: RequestInit): Promise<Response> {
+  const controller = new AbortController();
+  const abortRequest = () => controller.abort();
+  request.signal.addEventListener('abort', abortRequest, { once: true });
+  const timeout = setTimeout(() => controller.abort(), 8_000);
+  try {
+    if (request.signal.aborted) controller.abort();
+    return await fetch(url, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timeout);
+    request.signal.removeEventListener('abort', abortRequest);
+  }
+}
+
+function logPollinationsFallback(requestedModel: string, fallbackModel: string, primaryFailure: number | 'network_error'): void {
+  console.log(JSON.stringify({
+    event: 'inference_fallback',
+    provider: 'pollinations',
+    requested_model: requestedModel,
+    fallback_model: fallbackModel,
+    primary_failure: primaryFailure,
+  }));
+}
+
+function withPollinationsFallbackMetadata(response: Response, fallbackModel: string): Response {
+  const headers = new Headers(response.headers);
+  headers.set('x-osaii-fallback-provider', 'pollinations');
+  headers.set('x-osaii-fallback-model', fallbackModel);
+  return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
 }
 
 

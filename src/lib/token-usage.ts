@@ -216,27 +216,32 @@ export function trackTokenResponse(
   options: TokenTrackingOptions,
 ): Response {
   if (!response.ok) return response;
+  const fallbackProvider = response.headers.get("x-osaii-fallback-provider");
+  const fallbackModel = response.headers.get("x-osaii-fallback-model");
+  const trackingOptions = fallbackProvider === "pollinations" && fallbackModel?.startsWith("community/")
+    ? { ...options, provider: fallbackProvider, model: fallbackModel }
+    : options;
   const contentType = (response.headers.get("content-type") || "").toLowerCase();
   if (contentType.includes("text/event-stream")) {
-    return trackedEventStream(response, options);
+    return trackedEventStream(response, trackingOptions);
   }
 
   const headerUsage = usageFromHeaders(response.headers);
   if (headerUsage) {
-    scheduleRecord(options, response, headerUsage);
+    scheduleRecord(trackingOptions, response, headerUsage);
     return response;
   }
   const clone = response.clone();
-  options.ctx.waitUntil((async () => {
+  trackingOptions.ctx.waitUntil((async () => {
     const payload = contentType.includes("json")
       ? await clone.json().catch(() => null)
       : null;
-    await recordTokenUsage(options, response, extractTokenUsage(payload));
+    await recordTokenUsage(trackingOptions, response, extractTokenUsage(payload));
   })().catch((error) => {
     console.error(JSON.stringify({
       event: "token_usage_write_failed",
       error: error instanceof Error ? error.message : String(error),
-      surface: options.surface,
+      surface: trackingOptions.surface,
     }));
   }));
   return response;

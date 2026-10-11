@@ -16,7 +16,7 @@
     "db:migrate": "wrangler d1 migrations apply osaii --config wrangler.jsonc",
     "db:migrate:local": "wrangler d1 migrations apply osaii --local --config wrangler.jsonc",
     "db:migrate:dry": "wrangler d1 migrations apply osaii --dry-run --config wrangler.jsonc || echo '[dry-run] wrangler not authenticated — skipping'",
-    "test": "node --test tests/*.test.mjs",
+    "test": "node --test tests/*.test.mjs && bun test tests/pollinations-fallback.test.ts",
     "test:all": "bash scripts/test-all.sh",
     "typecheck": "tsc --noEmit",
     "lint": "tsc --noEmit --pretty false 2>&1 | head -n 100; echo 'lint: tsc done'",
